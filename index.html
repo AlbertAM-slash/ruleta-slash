@@ -399,6 +399,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
     <h2 id="pJoinTitle">¿Cómo te llamas?</h2>
     <p id="pJoinText">Escribe tu nombre tal como quieres que aparezca en el marcador.</p>
     <form id="pJoinForm">
+      <input id="pCode" type="text" maxlength="4" placeholder="Código" autocomplete="off" autocapitalize="characters" aria-label="Código de sala" style="flex:0 0 110px;text-transform:uppercase;font-family:var(--f-mono);letter-spacing:.15em" hidden>
       <input id="pName" type="text" maxlength="24" placeholder="Tu nombre" autocomplete="off" aria-label="Tu nombre">
       <button class="btn gold" type="submit" id="pJoinBtn">Unirme</button>
     </form>
@@ -469,7 +470,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 <script>
 (() => {
   const ARTIFACT_URL = "https://claude.ai/artifact/ByGb4w8QU43T9dy2DeXjSC";
-  const PLAY_LINK = ARTIFACT_URL + "#jugar";
+  let PLAY_LINK = ARTIFACT_URL + "#jugar";
+  // Dentro de Claude se usa el almacenamiento del Artifact; fuera (GitHub Pages) se usa una sala directa con PeerJS.
+  const IN_CLAUDE = !!(window.claude && window.claude.use);
+  const PEER_PREFIX = "ruleta-slash-sala-";
+  const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const makeCode = () => Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join("");
+  let peerLib = null;
+  function loadPeer() {
+    if (window.Peer) return Promise.resolve(window.Peer);
+    if (peerLib) return peerLib;
+    peerLib = new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js";
+      s.onload = () => (window.Peer ? res(window.Peer) : rej(new Error("peer")));
+      s.onerror = () => { peerLib = null; rej(new Error("peer")); };
+      document.head.appendChild(s);
+    });
+    return peerLib;
+  }
   const $ = (id) => document.getElementById(id);
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -848,6 +867,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   function saveLocal() { try { localStorage.setItem(LOCAL_GAME, JSON.stringify(mod.state)); } catch {} }
   async function push() {
     saveLocal();
+    if (host.active) host.broadcast();
     if (!mod.shared || !mod.gameRef) return;
     mod.dirty = true;
     if (mod.writing) return;
@@ -868,7 +888,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
     try { local = JSON.parse(localStorage.getItem(LOCAL_GAME) || "null"); } catch {}
     mod.state = normalizeGame(local) || freshGame();
     mod.wheel.rot = Number(prefs.rotation) || 0;
-    $("playLink").textContent = PLAY_LINK;
+    $("playLink").textContent = IN_CLAUDE ? PLAY_LINK : "Abriendo la sala…";
     renderMod();
     mod.wheel.resize();
 
@@ -881,7 +901,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
       return;
     }
     if (!db) {
-      $("modSub").textContent = "Modo sin conexión: los jugadores no pueden unirse desde su link";
+      if (!IN_CLAUDE) startHost();
+      else $("modSub").textContent = "Modo sin conexión: los jugadores no pueden unirse desde su link";
       return;
     }
     mod.gameRef = db.doc("game/estado");
@@ -896,6 +917,70 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
       (qs) => handlePlayers(qs.docs),
       () => toast("Se perdió la conexión con los jugadores. Recarga la página.")
     );
+  }
+
+  // ---- Sala directa (fuera de Claude) ----
+  const host = {
+    active: false, peer: null, code: null, conns: new Map(), docs: {},
+    broadcast() {
+      const msg = { t: "state", game: clone(mod.state) };
+      for (const c of host.conns.values()) { try { if (c.open) c.send(msg); } catch {} }
+    },
+  };
+  function playBase() { return location.origin + location.pathname.replace(/[^/]*$/, ""); }
+  function updateLink() {
+    if (!host.code) return;
+    PLAY_LINK = playBase() + "jugar.html?sala=" + host.code;
+    $("playLink").textContent = PLAY_LINK;
+    $("linkNote").textContent = `Comparte este link o el código de sala ${host.code}. Cada persona escribe su nombre y entra. Mantén esta pestaña abierta durante todo el juego: si la cierras, se corta la sala. Si alguien no puede entrar, tú operas su turno desde esta pantalla.`;
+    $("modSub").innerHTML = `Sala <b style="color:var(--gold);font-family:var(--f-mono);letter-spacing:.12em">${esc(host.code)}</b> abierta · los jugadores entran con ese código`;
+  }
+  async function startHost() {
+    $("modSub").textContent = "Abriendo la sala para jugadores…";
+    let Peer;
+    try { Peer = await loadPeer(); }
+    catch { $("modSub").textContent = "No se pudo cargar la conexión para jugadores. Revisa tu internet y recarga."; return; }
+    let tries = 0;
+    const open = (code) => {
+      const peer = new Peer(PEER_PREFIX + code);
+      peer.on("open", () => {
+        host.active = true; host.peer = peer; host.code = code;
+        prefs.room = code; savePrefs();
+        updateLink(); host.broadcast(); renderMod();
+      });
+      peer.on("error", (e) => {
+        if (e && e.type === "unavailable-id" && !host.active) {
+          peer.destroy();
+          tries++;
+          // La sala anterior puede tardar unos segundos en liberarse al recargar
+          if (tries <= 3) setTimeout(() => open(code), 2500); else { tries = 0; open(makeCode()); }
+        } else if (!host.active) {
+          $("modSub").textContent = "No se pudo abrir la sala para jugadores. Revisa tu internet y recarga la página.";
+        }
+      });
+      peer.on("disconnected", () => { try { peer.reconnect(); } catch {} });
+      peer.on("connection", (conn) => {
+        conn.on("open", () => { host.conns.set(conn.peer, conn); try { conn.send({ t: "state", game: clone(mod.state) }); } catch {} });
+        conn.on("data", (m) => onHostData(conn, m));
+        conn.on("close", () => host.conns.delete(conn.peer));
+        conn.on("error", () => host.conns.delete(conn.peer));
+      });
+    };
+    open(prefs.room && /^[A-Z0-9]{4}$/.test(prefs.room) ? prefs.room : makeCode());
+  }
+  function onHostData(conn, m) {
+    if (!m || typeof m !== "object" || m.t !== "doc" || !m.cid || !m.doc || typeof m.doc !== "object") return;
+    const cid = String(m.cid).slice(0, 60);
+    const d = m.doc;
+    host.docs[cid] = {
+      name: String(d.name || "").slice(0, 24),
+      joinedAt: Number(d.joinedAt) || 0,
+      spinReq: Number(d.spinReq) || null,
+      comodinReq: Number(d.comodinReq) || null,
+      giftTurn: Number(d.giftTurn) || null,
+    };
+    handlePlayers(Object.entries(host.docs).map(([id, data]) => ({ id, data: () => data })));
+    try { conn.send({ t: "state", game: clone(mod.state) }); } catch {}
   }
 
   function pickPrompt(i) {
@@ -1296,10 +1381,73 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   };
   const playTimer = makeTimer("pring");
 
+  // ---- Jugador conectado a una sala directa (fuera de Claude) ----
+  const LOCAL_ME = "ruleta-slash-jugador";
+  function initPeerPlay() {
+    play.peerMode = true;
+    play.peerStatus = "idle";
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(LOCAL_ME) || "{}") || {}; } catch {}
+    play.uid = saved.cid || ("c" + Math.random().toString(36).slice(2, 12) + Date.now().toString(36));
+    play.myDoc = saved.doc && saved.doc.name ? saved.doc : null;
+    const urlCode = (new URLSearchParams(location.search).get("sala") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+    play.code = urlCode || saved.code || "";
+    savePlayer();
+    $("pCode").hidden = false;
+    $("pCode").value = play.code;
+    if (play.myDoc) $("pName").value = play.myDoc.name;
+    renderPlay();
+    // Si ya se había unido a esta sala, vuelve a entrar solo
+    if (play.myDoc && play.code && saved.code === play.code) connectPeer();
+  }
+  function savePlayer() {
+    try { localStorage.setItem(LOCAL_ME, JSON.stringify({ cid: play.uid, code: play.code, doc: play.myDoc })); } catch {}
+  }
+  function sendDoc() {
+    if (play.conn && play.conn.open) { try { play.conn.send({ t: "doc", cid: play.uid, doc: play.myDoc }); return true; } catch {} }
+    return false;
+  }
+  async function connectPeer() {
+    if (play.connecting) return;
+    play.connecting = true;
+    play.joinError = "";
+    play.peerStatus = play.peerStatus === "lost" ? "lost" : "connecting";
+    renderPlay();
+    let Peer;
+    try { Peer = await loadPeer(); }
+    catch { play.connecting = false; play.peerStatus = "idle"; play.joinError = "No se pudo cargar la conexión. Revisa tu internet e inténtalo otra vez."; renderPlay(); return; }
+    const fail = (msg, retry) => {
+      play.connecting = false;
+      clearTimeout(play.connTimer);
+      if (retry) { play.peerStatus = "lost"; renderPlay(); setTimeout(connectPeer, 3000); }
+      else { play.peerStatus = "idle"; play.joinError = msg; renderPlay(); }
+    };
+    const go = () => {
+      const conn = play.peer.connect(PEER_PREFIX + play.code, { reliable: true });
+      play.connTimer = setTimeout(() => { if (!conn.open) { try { conn.close(); } catch {} fail(`No encontramos la sala ${play.code}. Revisa el código y que quien modera tenga la ruleta abierta.`, play.everOpen); } }, 12000);
+      conn.on("open", () => {
+        clearTimeout(play.connTimer);
+        play.conn = conn; play.connecting = false; play.peerStatus = "open"; play.everOpen = true;
+        sendDoc(); renderPlay();
+      });
+      conn.on("data", (m) => { if (m && m.t === "state") { play.loaded = true; onGame(normalizeGame(m.game)); } });
+      conn.on("close", () => { if (play.conn === conn) { play.conn = null; fail("", true); } });
+    };
+    if (play.peer && !play.peer.destroyed && play.peer.open) { go(); return; }
+    if (play.peer) { try { play.peer.destroy(); } catch {} }
+    play.peer = new Peer();
+    play.peer.on("open", go);
+    play.peer.on("error", (e) => {
+      if (e && e.type === "peer-unavailable") fail(`No encontramos la sala ${play.code}. Revisa el código y que quien modera tenga la ruleta abierta.`, play.everOpen);
+      else fail("Se cortó la conexión.", true);
+    });
+  }
+
   async function initPlay() {
     if (play.started) { renderPlay(); return; }
     play.started = true;
     play.wheel = makeWheel($("pwheel"));
+    if (!IN_CLAUDE) { initPeerPlay(); return; }
     renderPlay();
     const [db, user] = await Promise.all([dbP, userP]);
     if (!db || !user) {
@@ -1357,6 +1505,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   const myPlayer = () => (play.game && play.uid ? play.game.players.find((p) => p.uid === play.uid) : null);
 
   function writeMe(patch) {
+    if (play.peerMode) {
+      play.myDoc = { ...(play.myDoc || {}), ...patch };
+      savePlayer();
+      if (!sendDoc()) toast("Sin conexión con la sala. Reintentando…");
+      renderPlay();
+      return;
+    }
     play.myDoc = { ...(play.myDoc || {}), ...patch };
     const body = clone(play.myDoc);
     play.sending = true; renderPlay();
@@ -1376,9 +1531,34 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
     const joinBox = $("pJoin"), gameBox = $("pGame"), chip = $("meChip");
     $("pSound").textContent = "Sonido: " + (prefs.sound ? "sí" : "no");
     $("pSound").setAttribute("aria-pressed", String(prefs.sound));
-    const g = play.game, me = myPlayer();
+    const g = play.game, me = play.peerMode && play.peerStatus !== "open" && !play.everOpen ? null : myPlayer();
 
-    if (play.error || !play.uid || !play.myDoc || !me) {
+    if (play.peerMode && (!me || play.peerStatus !== "open")) {
+      const form = $("pJoinForm"), note = $("pJoinNote");
+      gameBox.hidden = !(me && play.peerStatus === "lost");
+      joinBox.hidden = false; chip.hidden = true;
+      note.textContent = ""; note.classList.remove("err");
+      form.hidden = true;
+      if (play.peerStatus === "connecting") {
+        $("pJoinTitle").textContent = "Conectando…";
+        $("pJoinText").textContent = `Buscando la sala ${play.code}.`;
+      } else if (play.peerStatus === "lost") {
+        $("pJoinTitle").textContent = "Reconectando…";
+        $("pJoinText").textContent = "Se cortó la conexión con la sala. Estamos intentando volver a entrar.";
+        note.textContent = "Si no vuelve en un rato, pide a quien modera que revise que la ruleta siga abierta.";
+      } else if (play.peerStatus === "open") {
+        $("pJoinTitle").textContent = `Hola, ${play.myDoc ? play.myDoc.name : ""}`;
+        $("pJoinText").textContent = "Ya entraste a la sala. En un momento apareces en el marcador.";
+      } else {
+        $("pJoinTitle").textContent = "Únete al juego";
+        $("pJoinText").textContent = "Escribe el código de sala que aparece en la pantalla de quien modera y tu nombre.";
+        form.hidden = false;
+        if (play.joinError) { note.textContent = play.joinError; note.classList.add("err"); }
+      }
+      return;
+    }
+
+    if (!play.peerMode && (play.error || !play.uid || !play.myDoc || !me)) {
       gameBox.hidden = true; chip.hidden = true; joinBox.hidden = false;
       const form = $("pJoinForm"), note = $("pJoinNote");
       note.classList.remove("err");
@@ -1480,6 +1660,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   $("pJoinForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const name = $("pName").value.trim().slice(0, 24);
+    if (play.peerMode) {
+      const code = $("pCode").value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+      if (code.length !== 4) { play.joinError = "El código de sala tiene 4 caracteres."; renderPlay(); return; }
+      if (!name) { play.joinError = "Escribe tu nombre."; renderPlay(); return; }
+      tone(1, 0.001);
+      play.code = code;
+      play.myDoc = { name, joinedAt: Date.now(), spinReq: null, comodinReq: null, giftTurn: null };
+      savePlayer();
+      connectPeer();
+      return;
+    }
     if (!name || !play.meRef) return;
     tone(1, 0.001);
     writeMe({ name, joinedAt: Date.now(), spinReq: null, comodinReq: null, giftTurn: null });
