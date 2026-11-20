@@ -1,0 +1,1502 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+</head>
+<body>
+<title>Ruleta Slash</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: escenario de concurso. Moderador: ruleta grande a la izquierda, tarjeta y marcador a la derecha. Jugador: ruleta chica y acciones, tarjeta y marcador. En teléfono se apila todo. */
+:root {
+  --stage: #13112b;
+  --panel: #1d1a42;
+  --panel-2: #25215a;
+  --line: #36307a;
+  --text: #f5f3ff;
+  --muted: #aca6dc;
+  --gold: #ffd15c;
+  --ink: #13112b;
+  /* Familias de color: frías = Pregunta, cálidas = Desafío */
+  --q1: #2dd4bf; --q2: #60a5fa; --q3: #a78bfa; --q4: #4ade80; --q5: #22d3ee;
+  --d1: #fb7185; --d2: #fbbf24; --d3: #fb923c; --d4: #f472b6;
+  --wild: #f5f3ff;
+  --f-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Figtree", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { background: var(--stage); color: var(--text); }
+body {
+  font-family: var(--f-body);
+  font-size: 16px;
+  line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 32px;
+  background:
+    radial-gradient(1200px 700px at 28% 45%, #221d55 0%, transparent 65%),
+    var(--stage);
+  min-height: 100%;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+button:disabled { cursor: default; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+.wrap { max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+/* Cabecera */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.brand h1 {
+  font-family: var(--f-display); font-weight: 800; font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: -0.02em; margin: 0; line-height: 1;
+}
+.brand h1 span { color: var(--gold); }
+.brand p { margin: 0; color: var(--muted); font-size: 14px; }
+.tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.tool {
+  background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  padding: 8px 14px; font-size: 14px; font-weight: 600; color: var(--muted);
+}
+.tool:hover { color: var(--text); border-color: var(--muted); }
+.tool[aria-pressed="false"] { opacity: .6; }
+.tool.hl { color: var(--ink); background: var(--gold); border-color: var(--gold); }
+
+/* Caja del link para jugadores */
+.linkbox { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.linkrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.linkrow code {
+  flex: 1 1 280px; min-width: 0; font-family: var(--f-mono); font-size: 14px; background: var(--stage);
+  border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; overflow-wrap: anywhere; user-select: all;
+}
+
+/* Grid principal */
+.main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); } }
+
+/* Ruleta */
+.stage { display: flex; flex-direction: column; align-items: center; gap: 16px; min-width: 0; }
+.wheel-box { position: relative; width: min(100%, 560px); aspect-ratio: 1; max-width: 100%; }
+.wheel-box.sm { width: min(100%, 380px); }
+.wheel-box canvas { width: 100%; height: 100%; display: block; }
+.pointer {
+  position: absolute; left: 50%; top: -6px; transform: translateX(-50%);
+  width: 44px; height: 54px; pointer-events: none;
+  filter: drop-shadow(0 4px 6px rgba(0,0,0,.45));
+}
+.sm .pointer { width: 34px; height: 42px; }
+.hub {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 26%; aspect-ratio: 1; border-radius: 50%;
+  background: var(--stage); border: 5px solid var(--gold);
+  font-family: var(--f-display); font-weight: 800; font-size: clamp(16px, 3vw, 26px);
+  letter-spacing: .04em; color: var(--gold);
+  display: grid; place-items: center; box-shadow: 0 0 0 6px var(--stage), 0 10px 30px rgba(0,0,0,.5);
+  transition: transform .15s ease, background .15s ease;
+}
+.hub:hover:not(:disabled) { transform: translate(-50%, -50%) scale(1.05); background: #1f1b48; }
+.hub:disabled { opacity: .85; }
+.hub small { display: block; font-family: var(--f-body); font-weight: 600; font-size: 11px; letter-spacing: .08em; color: var(--muted); margin-top: 2px; }
+.hub.deco { pointer-events: none; font-size: clamp(14px, 2.4vw, 18px); border-width: 4px; }
+.hint { color: var(--muted); font-size: 13px; text-align: center; margin: 0; }
+.hint kbd {
+  font-family: var(--f-mono); font-size: 12px; border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 6px; padding: 1px 6px; color: var(--text);
+}
+
+.legend { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.sw { width: 26px; height: 12px; border-radius: 3px; display: inline-block; }
+.sw.q { background: linear-gradient(90deg, var(--q1), var(--q2), var(--q3)); }
+.sw.d { background: linear-gradient(90deg, var(--d1), var(--d2), var(--d3)); }
+.sw.w { background: var(--wild); }
+.sw.c { background: repeating-linear-gradient(45deg, var(--gold) 0 5px, transparent 5px 9px); border: 1px solid var(--gold); }
+
+/* Panel lateral */
+.side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.label { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+
+.turn { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.turn strong { font-family: var(--f-display); font-weight: 800; font-size: clamp(26px, 3.4vw, 36px); line-height: 1.1; color: var(--gold); }
+
+/* Tarjeta */
+.card {
+  position: relative; background: var(--panel); border-radius: 18px; padding: 22px 22px 20px;
+  border: 1px solid var(--line); overflow: hidden;
+  display: flex; flex-direction: column; gap: 14px; min-height: 280px;
+}
+.card::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 6px; background: var(--seg, var(--line));
+}
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  padding: 5px 10px; border-radius: 999px; background: var(--seg, var(--panel-2)); color: var(--ink);
+}
+.pts { font-family: var(--f-mono); font-size: 13px; color: var(--muted); }
+.cat { font-family: var(--f-display); font-weight: 700; font-size: 22px; margin: 0; color: var(--seg, var(--text)); }
+.prompt { font-family: var(--f-display); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.25; margin: 0; text-wrap: balance; }
+.how { margin: 0; color: var(--muted); font-size: 14px; }
+.spinning-msg { font-family: var(--f-display); font-weight: 700; font-size: 28px; margin: auto 0; color: var(--muted); }
+
+.idle-list { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; font-size: 14px; }
+.idle-list li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.idle-list i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+.wild {
+  border: 2px dashed var(--gold); border-radius: 14px; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 2px; background: color-mix(in srgb, var(--gold) 8%, transparent);
+}
+.wild strong { font-family: var(--f-display); font-size: 20px; color: var(--gold); line-height: 1.2; }
+.wild span:last-child { color: var(--text); font-size: 14px; }
+.gifts-line { margin: 0; font-size: 13px; color: var(--muted); }
+.gifts-line b { color: var(--gold); }
+
+.timer-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.ring { width: 64px; height: 64px; flex: none; position: relative; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 6; }
+.ring .bg { stroke: var(--panel-2); }
+.ring .fg { stroke: var(--seg, var(--gold)); stroke-linecap: round; transition: stroke-dashoffset .25s linear; }
+.ring b { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--f-mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+.ring.done b { color: var(--d1); }
+
+.btn {
+  border: 0; border-radius: 12px; padding: 11px 16px; font-weight: 700; font-size: 15px;
+  background: var(--panel-2); color: var(--text); transition: transform .1s ease, filter .15s ease;
+}
+.btn:hover:not(:disabled) { filter: brightness(1.15); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .55; }
+.btn.primary { background: var(--seg, var(--gold)); color: var(--ink); }
+.btn.gold { background: var(--gold); color: var(--ink); }
+.btn.outline { background: transparent; border: 2px solid var(--gold); color: var(--gold); }
+.btn.big { font-family: var(--f-display); font-size: 22px; padding: 16px 22px; border-radius: 16px; width: 100%; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; }
+
+/* Marcador */
+.board { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.board-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.row {
+  display: grid; grid-template-columns: 28px minmax(0, 1fr) auto 28px; align-items: center; gap: 10px;
+  padding: 8px 8px; border-radius: 10px; transition: background .3s ease;
+}
+.rows.ro .row { grid-template-columns: 28px minmax(0, 1fr) auto; }
+.row.is-turn { background: var(--panel-2); }
+.row .pos { font-family: var(--f-mono); font-size: 13px; color: var(--muted); text-align: center; }
+.row .who { display: flex; flex-direction: column; min-width: 0; }
+.row .name { background: none; border: 0; text-align: left; padding: 0; font-weight: 600; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .sub { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.row .sub i { width: 7px; height: 7px; border-radius: 50%; background: var(--q4); display: inline-block; }
+.row .sub i.off { background: transparent; border: 1px solid var(--muted); }
+.row.is-turn .name { color: var(--gold); }
+.row.me .name::after { content: " (tú)"; color: var(--muted); font-weight: 500; }
+.row .score { font-family: var(--f-mono); font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; min-width: 2ch; text-align: right; }
+.row .del { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; padding: 4px; border-radius: 6px; opacity: .5; }
+.row .del:hover { opacity: 1; color: var(--d1); }
+.row.bump { animation: bump .7s ease; }
+@keyframes bump { 0% { background: color-mix(in srgb, var(--gold) 35%, transparent); } 100% { background: transparent; } }
+.row.is-turn.bump { animation: bumpTurn .7s ease; }
+@keyframes bumpTurn { 0% { background: color-mix(in srgb, var(--gold) 35%, transparent); } 100% { background: var(--panel-2); } }
+
+.add { display: flex; gap: 8px; }
+.add input, .join input {
+  flex: 1; min-width: 0; background: var(--stage); border: 1px solid var(--line); border-radius: 10px;
+  padding: 9px 12px; color: var(--text); font: inherit; font-size: 15px;
+}
+.add input::placeholder, .join input::placeholder { color: var(--muted); }
+.note { margin: 0; font-size: 12px; color: var(--muted); }
+
+/* Vista de jugador */
+.me-chip { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; font-size: 14px; }
+.me-chip b { font-family: var(--f-mono); color: var(--gold); }
+.pmain { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 28px; align-items: start; }
+@media (max-width: 900px) { .pmain { grid-template-columns: minmax(0, 1fr); } }
+.pcol { display: flex; flex-direction: column; gap: 16px; min-width: 0; align-items: stretch; }
+.pcol .wheel-box { align-self: center; }
+.gift { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.gift h3 { margin: 0; font-family: var(--f-display); font-size: 20px; line-height: 1.2; }
+.pips { display: flex; gap: 6px; }
+.pips i { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--gold); }
+.pips i.full { background: var(--gold); }
+.join {
+  max-width: 520px; width: 100%; margin: 6vh auto 0; background: var(--panel); border: 1px solid var(--line); border-radius: 22px;
+  padding: 28px 24px; display: flex; flex-direction: column; gap: 16px;
+}
+.join h2 { font-family: var(--f-display); font-weight: 800; font-size: clamp(28px, 5vw, 38px); margin: 0; line-height: 1.1; }
+.join p { margin: 0; color: var(--muted); }
+.join form { display: flex; gap: 8px; flex-wrap: wrap; }
+.join .err { color: var(--d1); }
+
+/* Podio */
+.overlay {
+  position: fixed; inset: 0; z-index: 50; background: rgba(10, 8, 30, .88);
+  display: grid; place-items: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.podium-card { background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 28px 24px; width: min(640px, 100%); display: flex; flex-direction: column; gap: 22px; align-items: center; text-align: center; }
+.podium-card h2 { font-family: var(--f-display); font-weight: 800; font-size: clamp(28px, 5vw, 40px); margin: 0; line-height: 1.1; }
+.podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: end; width: 100%; }
+.step { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+.step .who { font-weight: 700; font-size: 17px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step .blk { width: 100%; border-radius: 12px 12px 4px 4px; display: grid; place-items: center; font-family: var(--f-display); font-weight: 800; font-size: 34px; color: var(--ink); }
+.step .pt { font-family: var(--f-mono); font-size: 14px; color: var(--muted); }
+.step.p1 .blk { height: 150px; background: var(--gold); }
+.step.p2 .blk { height: 110px; background: var(--q2); }
+.step.p3 .blk { height: 80px; background: var(--d1); }
+.rest { color: var(--muted); font-size: 14px; margin: 0; }
+
+/* Editor de preguntas */
+.ed-panel {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
+  width: min(900px, 100%); height: min(780px, 100%);
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden;
+}
+.ed-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+.ed-top h2 { font-family: var(--f-display); font-weight: 800; font-size: 24px; margin: 0; line-height: 1.1; }
+.ed-main { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: 0; }
+.ed-tabs { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-right: 1px solid var(--line); overflow: auto; }
+.ed-tab {
+  display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  background: none; border: 0; border-radius: 10px; padding: 9px 10px; text-align: left; color: var(--muted); font-size: 14px; font-weight: 600;
+}
+.ed-tab i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.ed-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-tab em { font-style: normal; font-family: var(--f-mono); font-size: 12px; }
+.ed-tab:hover { color: var(--text); }
+.ed-tab[aria-selected="true"] { background: var(--panel-2); color: var(--text); }
+.ed-body { overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.ed-meta { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.ed-meta .badge { margin-bottom: 9px; }
+.fld { display: flex; flex-direction: column; gap: 4px; flex: 1 1 180px; min-width: 0; }
+.fld > span { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.fld-sm { flex: 0 0 110px; }
+.fld input, .ed-list textarea {
+  background: var(--stage); border: 1px solid var(--line); border-radius: 10px;
+  padding: 9px 12px; color: var(--text); font: inherit; font-size: 15px; width: 100%; min-width: 0;
+}
+.ed-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ed-list li { display: grid; grid-template-columns: 24px minmax(0, 1fr) 30px; gap: 8px; align-items: start; }
+.ed-list .num { font-family: var(--f-mono); font-size: 13px; color: var(--muted); padding-top: 11px; text-align: right; }
+.ed-list textarea { resize: vertical; line-height: 1.4; min-height: 46px; }
+.ed-list .del { background: none; border: 0; color: var(--muted); font-size: 20px; line-height: 1; padding: 8px 4px; border-radius: 6px; }
+.ed-list .del:hover { color: var(--d1); }
+.ed-add { align-self: flex-start; }
+.ed-foot { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; padding: 14px 18px; border-top: 1px solid var(--line); }
+.ed-foot .grp { display: flex; gap: 8px; flex-wrap: wrap; }
+.ed-status { margin: 0; font-size: 13px; color: var(--muted); flex: 1 1 240px; min-width: 0; }
+.ed-status.err { color: var(--d1); }
+@media (max-width: 700px) {
+  .ed-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .ed-tabs { flex-direction: row; border-right: 0; border-bottom: 1px solid var(--line); }
+  .ed-tab { grid-template-columns: 10px auto auto; white-space: nowrap; }
+}
+
+.toast {
+  position: fixed; left: 50%; bottom: max(24px, calc(env(safe-area-inset-bottom, 0px) + 16px)); transform: translateX(-50%);
+  background: var(--gold); color: var(--ink); font-weight: 700; padding: 10px 18px; border-radius: 999px; z-index: 60;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4); max-width: calc(100% - 32px); text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+</style>
+
+<!-- ============ VISTA MODERADOR ============ -->
+<div class="wrap" id="modView">
+  <header class="top">
+    <div class="brand">
+      <h1>Ruleta <span>Slash</span></h1>
+      <p id="modSub">Rompehielos para el equipo · vista del moderador</p>
+    </div>
+    <div class="tools">
+      <button class="tool hl" id="btnLink" aria-expanded="false">Link para jugadores</button>
+      <button class="tool" id="btnEdit" hidden>Ver y editar preguntas</button>
+      <button class="tool" id="btnSound" aria-pressed="true">Sonido: sí</button>
+      <button class="tool" id="btnReset">Reiniciar</button>
+      <button class="tool" id="btnPodium">Ver podio</button>
+    </div>
+  </header>
+
+  <section class="linkbox" id="linkBox" hidden>
+    <span class="label">Link para jugadores</span>
+    <div class="linkrow">
+      <code id="playLink"></code>
+      <button class="btn gold" id="copyLink">Copiar link</button>
+    </div>
+    <p class="note" id="linkNote">Cada persona entra con su cuenta de Claude, escribe su nombre y queda en el marcador. Para poder jugar, compárteles la ruleta como Colaborador desde el menú Compartir. Si alguien no puede entrar, tú operas su turno desde esta pantalla.</p>
+  </section>
+
+  <main class="main">
+    <section class="stage" aria-label="Ruleta">
+      <div class="wheel-box">
+        <canvas id="wheel" aria-hidden="true"></canvas>
+        <svg class="pointer" viewBox="0 0 44 54" aria-hidden="true">
+          <path d="M22 52 L4 10 Q2 4 8 3 L36 3 Q42 4 40 10 Z" fill="#ffd15c" stroke="#13112b" stroke-width="3"/>
+          <circle cx="22" cy="14" r="5" fill="#13112b"/>
+        </svg>
+        <button class="hub" id="spin" aria-label="Girar la ruleta">
+          <span>GIRAR<small id="hubSub">ESPACIO</small></span>
+        </button>
+      </div>
+      <p class="hint">Comparte esta pestaña en la videollamada. Quien tiene el turno gira desde su link; si no está conectado, gira tú con el botón central o con <kbd>Espacio</kbd>.</p>
+      <div class="legend" aria-label="Leyenda">
+        <span><i class="sw q"></i>Pregunta · +1</span>
+        <span><i class="sw d"></i>Desafío · +2</span>
+        <span><i class="sw w"></i>Grupal · todos +1</span>
+        <span><i class="sw c"></i>Comodín al azar · 1 por turno</span>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="turn" aria-live="polite">
+        <span class="label">Turno de</span>
+        <strong id="turnName">—</strong>
+      </div>
+
+      <article class="card" id="card" aria-live="polite"></article>
+
+      <section class="board" aria-label="Marcador">
+        <div class="board-head">
+          <span class="label">Marcador</span>
+          <span class="note" id="roundInfo"></span>
+        </div>
+        <ol class="rows" id="rows"></ol>
+        <form class="add" id="addForm">
+          <input id="addName" type="text" maxlength="24" placeholder="Agregar participante" autocomplete="off" aria-label="Nombre del participante">
+          <button class="btn" type="submit">Agregar</button>
+        </form>
+        <p class="note">Toca un nombre para darle el turno. Cada persona tiene 4 puntos para regalar, máximo 1 por turno.</p>
+      </section>
+    </aside>
+  </main>
+</div>
+
+<!-- ============ VISTA JUGADOR ============ -->
+<div class="wrap" id="playView" hidden>
+  <header class="top">
+    <div class="brand">
+      <h1>Ruleta <span>Slash</span></h1>
+      <p>Vista de jugador</p>
+    </div>
+    <div class="tools">
+      <div class="me-chip" id="meChip" hidden></div>
+      <button class="tool" id="pSound" aria-pressed="true">Sonido: sí</button>
+    </div>
+  </header>
+
+  <section class="join" id="pJoin" hidden>
+    <span class="label">Unirse al juego</span>
+    <h2 id="pJoinTitle">¿Cómo te llamas?</h2>
+    <p id="pJoinText">Escribe tu nombre tal como quieres que aparezca en el marcador.</p>
+    <form id="pJoinForm">
+      <input id="pName" type="text" maxlength="24" placeholder="Tu nombre" autocomplete="off" aria-label="Tu nombre">
+      <button class="btn gold" type="submit" id="pJoinBtn">Unirme</button>
+    </form>
+    <p class="note" id="pJoinNote"></p>
+  </section>
+
+  <main class="pmain" id="pGame" hidden>
+    <section class="pcol">
+      <div class="turn" aria-live="polite">
+        <span class="label" id="pTurnLabel">Turno de</span>
+        <strong id="pTurnName">—</strong>
+      </div>
+      <div class="wheel-box sm">
+        <canvas id="pwheel" aria-hidden="true"></canvas>
+        <svg class="pointer" viewBox="0 0 44 54" aria-hidden="true">
+          <path d="M22 52 L4 10 Q2 4 8 3 L36 3 Q42 4 40 10 Z" fill="#ffd15c" stroke="#13112b" stroke-width="3"/>
+          <circle cx="22" cy="14" r="5" fill="#13112b"/>
+        </svg>
+        <div class="hub deco" aria-hidden="true">SLASH</div>
+      </div>
+      <div id="pActions" class="pcol"></div>
+    </section>
+    <section class="pcol">
+      <article class="card" id="pCard" aria-live="polite"></article>
+      <section class="board" aria-label="Marcador">
+        <div class="board-head"><span class="label">Marcador</span></div>
+        <ol class="rows ro" id="pRows"></ol>
+      </section>
+    </section>
+  </main>
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="podium-card" role="dialog" aria-modal="true" aria-labelledby="podTitle">
+    <span class="label">Resultado final</span>
+    <h2 id="podTitle">¡Ganó —!</h2>
+    <div class="podium" id="podium"></div>
+    <p class="rest" id="podRest"></p>
+    <div class="actions" style="justify-content:center">
+      <button class="btn" id="podClose">Seguir jugando</button>
+      <button class="btn gold" id="podNew">Nueva partida</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="editor" hidden>
+  <div class="ed-panel" role="dialog" aria-modal="true" aria-labelledby="edTitle">
+    <header class="ed-top">
+      <h2 id="edTitle">Preguntas y desafíos</h2>
+      <button class="tool" id="edClose">Cerrar</button>
+    </header>
+    <div class="ed-main">
+      <nav class="ed-tabs" id="edTabs" role="tablist" aria-label="Casillas de la ruleta"></nav>
+      <div class="ed-body" id="edBody" role="tabpanel"></div>
+    </div>
+    <footer class="ed-foot">
+      <p class="ed-status" id="edStatus"></p>
+      <div class="grp">
+        <button class="btn" id="edRestore">Restaurar originales</button>
+        <button class="btn gold" id="edSave">Guardar cambios</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+  const ARTIFACT_URL = "https://claude.ai/artifact/ByGb4w8QU43T9dy2DeXjSC";
+  const PLAY_LINK = ARTIFACT_URL + "#jugar";
+  const $ = (id) => document.getElementById(id);
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const clone = (v) => JSON.parse(JSON.stringify(v));
+  const esc = (s) => String(s).replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+  const norm = (s) => String(s || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ================= CONTENIDO =================
+  const DEFAULT_SEGMENTS = [
+    { name: "Proyectos Slash", type: "q", color: "--q1", secs: 60, prompts: [
+      "Si los proyectos de Slash fueran un sándwich, ¿a cuál le pondrías palta y por qué?",
+      "¿Qué proyecto de Slash le mostrarías a tu familia para explicarles a qué te dedicas?",
+      "Si VendoApp fuera una persona, ¿cómo sería su personalidad?",
+      "¿Qué proyecto te sacó canas y cuál te sacó una sonrisa?",
+      "Si EducomLab sumara una asignatura dictada por ti, ¿de qué sería?",
+      "¿Qué servicio de Slash contratarías si tuvieras un negocio propio? ¿Y qué negocio sería?",
+    ]},
+    { name: "Búsqueda express", type: "d", color: "--d1", secs: 30, how: "Tienes 30 segundos para mostrarlo a cámara.", prompts: [
+      "Muestra algo de tu casa que podrías vender en VendoApp y ponle precio de Cyber Day.",
+      "Trae el objeto que más te acompaña en tu trabajo 100% remoto.",
+      "Encuentra algo que empiece con la letra S, de Slash.",
+      "Muestra algo que tenga más de 10 años, igual que la experiencia de Slash.",
+      "Trae algo que represente tu rol en el equipo.",
+      "Muestra algo de color verde y véndelo como si fuera un producto auto-administrable.",
+    ]},
+    { name: "Infancia y carrera", type: "q", color: "--q2", secs: 60, prompts: [
+      "¿Qué querías ser cuando grande y hoy estás cerca de cumplirlo gracias a tu trabajo?",
+      "¿Cuál es el primer sitio web o app que recuerdas haber usado de niño?",
+      "¿Qué juego de tu infancia convertirías en una app móvil de Slash?",
+      "¿Qué le dirías a tu yo de 10 años sobre trabajar 100% remoto?",
+      "¿Qué habilidad de tu infancia usas hoy en tu trabajo sin que nadie lo note?",
+      "¿Cuál fue tu primer computador o celular, y qué proyecto de Slash podrías correr en él?",
+    ]},
+    { name: "Mímica Slash", type: "d", color: "--d2", secs: 45, how: "Sin hablar. El equipo adivina en el chat o en voz alta.", prompts: [
+      "Un cliente aprobando el diseño final a la primera.",
+      "Un servidor que se cae justo en pleno Cyber Day.",
+      "Un deploy exitoso a producción.",
+      "Un estudiante entrando por primera vez a EducomLab.",
+      "Una reunión donde todos hablan con el micrófono apagado.",
+      "Tu reacción al encontrar un bug en producción un viernes en la tarde.",
+    ]},
+    { name: "¿Qué preferirías?", type: "q", color: "--q3", secs: 60, prompts: [
+      "¿Lanzar un e-commerce en pleno Cyber Day o migrar un servidor un viernes a las 6 de la tarde?",
+      "¿Un cliente que responde en 5 minutos pero cambia todo, o uno que tarda una semana pero aprueba a la primera?",
+      "¿Mantener un WordPress de 2015 o construir un sistema a medida desde cero en una semana?",
+      "¿Explicarle Moodle a tus abuelos o explicarle Webpay a un gato?",
+      "¿Trabajar una semana desde la playa en Viña del Mar o desde la montaña en Colombia?",
+      "¿Reuniones sin cámara para siempre o sin micrófono para siempre?",
+    ]},
+    { name: "Dibujo exprés", type: "d", color: "--d3", secs: 40, how: "Dibuja en papel, muéstralo a cámara y el equipo adivina.", prompts: [
+      "Un autorretrato en modo EDUCOM.",
+      "El logo de Slash, de memoria.",
+      "La app que Slash debería lanzar el próximo año.",
+      "Tu escritorio de trabajo remoto visto desde arriba.",
+      "Un servidor de Cloudways como si fuera una mascota.",
+      "A alguien del equipo como superhéroe del desarrollo web.",
+    ]},
+    { name: "Cultura pop", type: "q", color: "--q4", secs: 60, prompts: [
+      "Si Slash fuera una serie, ¿cómo se llamaría y quién del equipo sería protagonista?",
+      "¿Qué canción pondrías de fondo mientras haces un deploy a producción?",
+      "¿Qué personaje de ficción contratarías para soporte de plataformas?",
+      "Si tu último proyecto fuera una película, ¿de qué género sería?",
+      "¿Qué app usas más después de WhatsApp y qué le mejorarías?",
+      "¿Qué meme describe mejor la última semana del equipo?",
+    ]},
+    { name: "Modo Showrunner", type: "d", color: "--d4", secs: 30, how: "Actúalo con todo durante 30 segundos.", prompts: [
+      "Presenta un servicio de Slash como si fuera el tráiler de una película.",
+      "Narra un deploy a producción como si fuera un relato de fútbol.",
+      "Vende la mantención de sitios web como en un infomercial de madrugada.",
+      "Da el pronóstico del tiempo para los servidores de esta semana.",
+      "Presenta a la siguiente persona del marcador como una estrella de rock.",
+      "Relata esta reunión como un documental de naturaleza.",
+    ]},
+    { name: "Comida", type: "q", color: "--q5", secs: 60, prompts: [
+      "Si Slash fuera un restaurante, ¿qué plato serían las apps móviles y cuál el hosting?",
+      "¿Cuál es tu snack oficial para una jornada de mantención de sitios?",
+      "Completo o churrasco: defiende tu opción como si fuera una propuesta comercial.",
+      "¿Qué comida le llevarías al equipo para celebrar el lanzamiento de un proyecto?",
+      "Somos un equipo entre Chile, Argentina y Colombia: ¿qué plato típico de otro país del equipo te gustaría probar?",
+      "Describe tu almuerzo de hoy como si fuera la ficha de un producto en un e-commerce.",
+    ]},
+    { name: "Todos responden", type: "w", color: "--wild", secs: 60, how: "Responde todo el equipo, partiendo por quien giró.", prompts: [
+      "Describan su semana en Slash en una sola palabra.",
+      "¿Qué emoji describe el último proyecto que tocaron?",
+      "Un dato sobre ustedes que nadie del equipo sepa.",
+      "¿Qué valor de Slash viven más: disfrutar lo que hacemos, aprender y evolucionar, o trabajar en equipo?",
+      "¿Qué herramienta de trabajo no podrían dejar de usar?",
+      "¿Cuál es su próximo panorama del fin de semana?",
+    ]},
+  ];
+  let SEGMENTS = clone(DEFAULT_SEGMENTS);
+  const N = SEGMENTS.length;
+  const SEG = (Math.PI * 2) / N;
+  const TYPE = {
+    q: { label: "Pregunta", pts: 1, ok: "Respondió · +1", no: "Pasar", tag: "+1" },
+    d: { label: "Desafío", pts: 2, ok: "Lo logró · +2", no: "No alcanzó", tag: "+2" },
+    w: { label: "Grupal", pts: 1, ok: "Todos +1", no: "Saltar", tag: "todos +1" },
+  };
+  const COLORS = ["--q1", "--q2", "--q3", "--q4", "--q5", "--d1", "--d2", "--d3", "--d4", "--wild"];
+  const WILDCARDS = [
+    { name: "Pedir ayuda a un colega", text: "Elige a alguien del equipo para que te ayude a responder.", pts: 0 },
+    { name: "Idioma inventado", text: "Responde en un idioma que no existe. El equipo intenta entenderte.", pts: 0 },
+    { name: "Se responde en grupo", text: "Todo el equipo responde contigo.", pts: 0 },
+    { name: "Punto extra", text: "Ganas 1 punto extra ahora mismo.", pts: 1 },
+    { name: "Mano en la frente", text: "Responde con una mano pegada a la frente todo el rato.", pts: 0 },
+    { name: "Doble punto extra", text: "Ganas 2 puntos extra ahora mismo.", pts: 2 },
+  ];
+  const GIFTS = 4;
+  const DEFAULT_PLAYERS = ["Seba", "Valen", "Sol", "Alberto", "Esteban", "Luisa"];
+
+  // ================= PREFERENCIAS LOCALES =================
+  const prefs = (() => { try { return JSON.parse(localStorage.getItem("ruleta-slash-prefs") || "{}"); } catch { return {}; } })();
+  if (prefs.sound === undefined) prefs.sound = true;
+  const savePrefs = () => { try { localStorage.setItem("ruleta-slash-prefs", JSON.stringify(prefs)); } catch {} };
+  try { ["ruleta-slash", "ruleta-slash-v2", "ruleta-slash-equipo"].forEach((k) => localStorage.removeItem(k)); } catch {}
+
+  // ================= SONIDO =================
+  let audio;
+  function tone(freq, dur, type = "square", vol = 0.05) {
+    if (!prefs.sound) return;
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, audio.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
+      o.connect(g).connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + dur);
+    } catch {}
+  }
+  const fanfare = () => { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.18, "triangle", 0.08), i * 110)); };
+  const chime = () => { tone(784, 0.12, "triangle", 0.08); setTimeout(() => tone(1047, 0.18, "triangle", 0.08), 110); };
+
+  let toastT;
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 2200);
+  }
+
+  // ================= RULETA (dibujo) =================
+  function makeWheel(canvas) {
+    const w = { canvas, ctx: canvas.getContext("2d"), size: 300, rot: 0, lights: 0 };
+    w.resize = () => {
+      const r = canvas.getBoundingClientRect();
+      if (!r.width) return;
+      w.size = Math.max(200, Math.round(r.width));
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = w.size * dpr; canvas.height = w.size * dpr;
+      w.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      w.draw();
+    };
+    w.draw = (rot = w.rot) => {
+      const ctx = w.ctx, size = w.size;
+      const c = size / 2, R = c - 6, rim = Math.max(12, size * 0.04), rIn = R - rim;
+      ctx.clearRect(0, 0, size, size);
+      ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2);
+      ctx.fillStyle = css("--panel"); ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = css("--gold"); ctx.stroke();
+      const dots = N * 3;
+      for (let i = 0; i < dots; i++) {
+        const a = (i / dots) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(c + Math.cos(a) * (R - rim / 2), c + Math.sin(a) * (R - rim / 2), Math.max(2.2, size * 0.0075), 0, Math.PI * 2);
+        ctx.fillStyle = (i + w.lights) % 2 === 0 ? css("--gold") : "#5a4f9c";
+        ctx.fill();
+      }
+      ctx.save();
+      ctx.translate(c, c);
+      ctx.rotate(rot);
+      for (let i = 0; i < N; i++) {
+        const s = SEGMENTS[i];
+        const a0 = -Math.PI / 2 + i * SEG, a1 = a0 + SEG;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, rIn, a0, a1); ctx.closePath();
+        ctx.fillStyle = css(s.color); ctx.fill();
+        ctx.lineWidth = 3; ctx.strokeStyle = css("--stage"); ctx.stroke();
+        ctx.save();
+        ctx.rotate(a0 + SEG / 2);
+        ctx.fillStyle = css("--ink");
+        ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        const maxW = rIn * 0.62;
+        let fs = Math.max(10, size * 0.036);
+        const label = s.name.toUpperCase();
+        ctx.font = `800 ${fs}px "Bricolage Grotesque", system-ui, sans-serif`;
+        while (ctx.measureText(label).width > maxW && fs > 8) { fs -= 0.5; ctx.font = `800 ${fs}px "Bricolage Grotesque", system-ui, sans-serif`; }
+        ctx.fillText(label, rIn - size * 0.035, -fs * 0.15);
+        ctx.font = `600 ${Math.max(8, fs * 0.62)}px "Figtree", system-ui, sans-serif`;
+        ctx.globalAlpha = 0.72;
+        ctx.fillText((TYPE[s.type].label + " · " + TYPE[s.type].tag).toUpperCase(), rIn - size * 0.035, fs * 0.85);
+        ctx.restore();
+      }
+      ctx.restore();
+    };
+    new ResizeObserver(() => w.resize()).observe(canvas);
+    return w;
+  }
+  function indexAt(rot) {
+    const t = Math.PI * 2;
+    const off = (((-rot) % t) + t) % t;
+    return Math.floor(off / SEG) % N;
+  }
+  function animateSpin(w, from, to, dur, done) {
+    const t0 = performance.now();
+    let last = indexAt(from), tick = 0;
+    const ease = (x) => 1 - Math.pow(1 - x, 4);
+    function frame(now) {
+      const p = Math.min(1, (now - t0) / dur);
+      const rot = from + (to - from) * ease(p);
+      const idx = indexAt(rot);
+      if (idx !== last) { last = idx; tone(900 + Math.random() * 120, 0.03, "square", 0.035); }
+      if (++tick % 6 === 0) w.lights++;
+      w.rot = rot; w.draw(rot);
+      if (p < 1) requestAnimationFrame(frame); else done && done();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ================= TEMPORIZADOR =================
+  function makeTimer(ringId) {
+    return {
+      id: null, left: 0, total: 0, key: null,
+      start(secs) {
+        this.stop(); this.total = secs; this.left = secs; this.paint();
+        this.id = setInterval(() => {
+          this.left--; this.paint();
+          if (this.left <= 3 && this.left > 0) tone(660, 0.08, "sine", 0.06);
+          if (this.left <= 0) { this.stop(); tone(220, 0.5, "sawtooth", 0.06); }
+        }, 1000);
+      },
+      reset(secs, key) { this.stop(); this.total = secs; this.left = secs; this.key = key; },
+      stop() { clearInterval(this.id); this.id = null; },
+      paint() {
+        const ring = $(ringId); if (!ring) return;
+        const fg = ring.querySelector(".fg");
+        const C = 2 * Math.PI * 27;
+        fg.style.strokeDasharray = C;
+        fg.style.strokeDashoffset = C * (1 - Math.max(0, this.left) / (this.total || 1));
+        ring.querySelector("b").textContent = Math.max(0, this.left);
+        ring.classList.toggle("done", this.left <= 0);
+      },
+    };
+  }
+
+  // ================= TARJETA (compartida) =================
+  function safeCard(c) {
+    if (!c || typeof c !== "object") return null;
+    const type = TYPE[c.type] ? c.type : "q";
+    return {
+      seg: Number.isInteger(c.seg) && c.seg >= 0 && c.seg < N ? c.seg : 0,
+      prompt: Number.isInteger(c.prompt) ? c.prompt : 0,
+      text: String(c.text || ""), segName: String(c.segName || ""), type,
+      color: COLORS.includes(c.color) ? c.color : "--line",
+      secs: Math.min(180, Math.max(10, Number(c.secs) || 60)),
+      how: String(c.how || ""), resolved: !!c.resolved,
+      turnId: Number(c.turnId) || 0,
+      spin: c.spin && typeof c.spin === "object" ? { id: Number(c.spin.id) || 0, from: Number(c.spin.from) || 0, to: Number(c.spin.to) || 0, dur: Math.min(8000, Math.max(300, Number(c.spin.dur) || 5000)) } : null,
+      timer: c.timer && typeof c.timer === "object" ? { id: Number(c.timer.id) || 0, secs: Math.min(180, Math.max(10, Number(c.timer.secs) || 60)) } : null,
+      comodin: Number.isInteger(c.comodin) && c.comodin >= 0 && c.comodin < WILDCARDS.length ? c.comodin : null,
+    };
+  }
+  function cardFields(k, pi) {
+    const s = SEGMENTS[k];
+    return {
+      seg: k, prompt: pi, text: s.prompts[pi], segName: s.name, type: s.type, color: s.color, secs: s.secs,
+      how: s.how || (s.type === "q" ? "Responde en voz alta. Si alguien más quiere sumar su respuesta, adelante." : ""),
+    };
+  }
+  function cardHTML(c, o) {
+    const ty = TYPE[c.type];
+    const w = c.comodin != null ? WILDCARDS[c.comodin] : null;
+    return `
+      <div class="card-head">
+        <span class="badge">${ty.label}</span>
+        <span class="pts">${c.type === "w" ? "+1 para cada uno" : "+" + ty.pts + (ty.pts === 1 ? " punto" : " puntos")}</span>
+      </div>
+      <h2 class="cat">${esc(c.segName)}</h2>
+      <p class="prompt">${esc(c.text)}</p>
+      ${c.how ? `<p class="how">${esc(c.how)}</p>` : ""}
+      ${w ? `<div class="wild"><span class="label">Comodín</span><strong>${esc(w.name)}</strong><span>${esc(w.text)}</span></div>` : ""}
+      ${o.gifts || ""}
+      <div class="timer-row">
+        <div class="ring" id="${o.ringId}">
+          <svg viewBox="0 0 64 64"><circle class="bg" cx="32" cy="32" r="27"/><circle class="fg" cx="32" cy="32" r="27"/></svg>
+          <b>${c.secs}</b>
+        </div>
+        ${o.timerBtn || ""}
+      </div>
+      ${o.actions ? `<div class="actions">${o.actions}</div>` : ""}`;
+  }
+  const giftsLine = (S) => {
+    const names = (S.turnGifts || []).map((id) => S.players.find((p) => p.id === id)).filter(Boolean).map((p) => esc(p.name));
+    return names.length ? `<p class="gifts-line">Regalaron un punto en este turno: <b>${names.join(", ")}</b></p>` : "";
+  };
+  const spinningCard = () => `<div class="card-head"><span class="label">Girando</span></div><p class="spinning-msg">¿Dónde caerá…?</p>`;
+
+  // ================= ESTADO DEL JUEGO =================
+  const newId = () => "p" + Math.random().toString(36).slice(2, 10);
+  const newPlayer = (name, uid = null) => ({ id: newId(), name, score: 0, uid, giftsLeft: GIFTS });
+  function freshGame() {
+    return { v: 4, players: DEFAULT_PLAYERS.map((n) => newPlayer(n)), turn: 0, turnId: 1, current: null, spins: 0, turnGifts: [], kicked: [], decks: {} };
+  }
+  function normalizeGame(g) {
+    if (!g || typeof g !== "object" || !Array.isArray(g.players)) return null;
+    const players = g.players.slice(0, 12).map((p) => ({
+      id: String((p && p.id) || newId()).slice(0, 40),
+      name: String((p && p.name) || "").trim().slice(0, 24) || "Jugador",
+      score: Number.isFinite(Number(p && p.score)) ? Math.round(Number(p.score)) : 0,
+      uid: p && p.uid ? String(p.uid).slice(0, 120) : null,
+      giftsLeft: Math.min(GIFTS, Math.max(0, Number.isFinite(Number(p && p.giftsLeft)) ? Number(p.giftsLeft) : GIFTS)),
+    }));
+    return {
+      v: 4, players,
+      turn: Math.min(Math.max(0, Number(g.turn) | 0), Math.max(0, players.length - 1)),
+      turnId: Math.max(1, Number(g.turnId) | 0),
+      current: safeCard(g.current),
+      spins: Math.max(0, Number(g.spins) | 0),
+      turnGifts: Array.isArray(g.turnGifts) ? g.turnGifts.map(String) : [],
+      kicked: Array.isArray(g.kicked) ? g.kicked.filter((k) => k && k.uid).map((k) => ({ uid: String(k.uid), at: Number(k.at) || 0 })) : [],
+      decks: g.decks && typeof g.decks === "object" ? g.decks : {},
+    };
+  }
+
+  // ================= CAPACIDADES =================
+  const use = (name) => (window.claude && window.claude.use ? window.claude.use(name).catch(() => null) : Promise.resolve(null));
+  const dbP = use("db");
+  const userP = use("user");
+
+  // ================= PREGUNTAS (config) =================
+  const LOCAL_Q = "ruleta-slash-preguntas-v2";
+  let configRef = null, localCfg = null;
+  try { localCfg = JSON.parse(localStorage.getItem(LOCAL_Q) || "null"); } catch {}
+  try { localStorage.removeItem("ruleta-slash-preguntas"); } catch {}
+
+  function cleanCfg(cfg) {
+    const segs = cfg && Array.isArray(cfg.segments) ? cfg.segments : [];
+    return DEFAULT_SEGMENTS.map((d, i) => {
+      const s = segs[i] || {};
+      const prompts = (Array.isArray(s.prompts) ? s.prompts : []).map((p) => String(p).trim()).filter(Boolean).slice(0, 40);
+      const secs = Math.round(Number(s.secs));
+      return {
+        ...clone(d),
+        name: String(s.name || "").trim().slice(0, 28) || d.name,
+        secs: secs >= 10 && secs <= 180 ? secs : d.secs,
+        prompts: prompts.length ? prompts : clone(d.prompts),
+      };
+    });
+  }
+  const toCfg = (segs) => ({ segments: segs.map((s) => ({ name: s.name, secs: s.secs, prompts: s.prompts })) });
+  function applyConfig(cfg) {
+    const next = cfg ? cleanCfg(cfg) : clone(DEFAULT_SEGMENTS);
+    if (JSON.stringify(next) === JSON.stringify(SEGMENTS)) return;
+    SEGMENTS = next;
+    if (mod.state) {
+      mod.state.decks = {};
+      if (!mod.spinning) mod.wheel && mod.wheel.draw();
+      renderMod();
+    }
+    if (play.wheel && !play.animating) play.wheel.draw();
+  }
+  dbP.then((db) => {
+    if (!db) { if (localCfg) applyConfig(localCfg); return; }
+    configRef = db.doc("config/preguntas");
+    configRef.onSnapshot(
+      (snap) => applyConfig(snap.exists ? snap.data() : localCfg),
+      () => { configRef = null; }
+    );
+  });
+  if (localCfg) setTimeout(() => { if (!configRef) applyConfig(localCfg); }, 0);
+
+  // =====================================================================
+  // ================= VISTA MODERADOR =================
+  // =====================================================================
+  const mod = { state: null, wheel: null, spinning: false, shared: false, gameRef: null, started: false, writing: false, dirty: false };
+  const modTimer = makeTimer("ring");
+  const LOCAL_GAME = "ruleta-slash-juego";
+
+  function saveLocal() { try { localStorage.setItem(LOCAL_GAME, JSON.stringify(mod.state)); } catch {} }
+  async function push() {
+    saveLocal();
+    if (!mod.shared || !mod.gameRef) return;
+    mod.dirty = true;
+    if (mod.writing) return;
+    mod.writing = true;
+    while (mod.dirty) {
+      mod.dirty = false;
+      try { await mod.gameRef.set(clone(mod.state)); }
+      catch (e) { toast("No se pudo sincronizar con los jugadores. Revisa tu conexión."); break; }
+    }
+    mod.writing = false;
+  }
+
+  async function initMod() {
+    if (mod.started) return;
+    mod.started = true;
+    mod.wheel = makeWheel($("wheel"));
+    let local = null;
+    try { local = JSON.parse(localStorage.getItem(LOCAL_GAME) || "null"); } catch {}
+    mod.state = normalizeGame(local) || freshGame();
+    mod.wheel.rot = Number(prefs.rotation) || 0;
+    $("playLink").textContent = PLAY_LINK;
+    renderMod();
+    mod.wheel.resize();
+
+    const [db, user] = await Promise.all([dbP, userP]);
+    let canEdit = false;
+    try { canEdit = user ? await user.canEdit() : false; } catch {}
+    if (db && user && !canEdit) {
+      // Quien no edita la ruleta entra como jugador
+      location.hash = "jugar";
+      return;
+    }
+    if (!db) {
+      $("modSub").textContent = "Modo sin conexión: los jugadores no pueden unirse desde su link";
+      return;
+    }
+    mod.gameRef = db.doc("game/estado");
+    try {
+      const snap = await mod.gameRef.get();
+      if (snap.exists) { const g = normalizeGame(snap.data()); if (g) mod.state = g; }
+    } catch {}
+    mod.shared = true;
+    renderMod();
+    push();
+    db.collection("players").onSnapshot(
+      (qs) => handlePlayers(qs.docs),
+      () => toast("Se perdió la conexión con los jugadores. Recarga la página.")
+    );
+  }
+
+  function pickPrompt(i) {
+    const S = mod.state, key = String(i);
+    let deck = Array.isArray(S.decks[key]) ? S.decks[key].filter((k) => k < SEGMENTS[i].prompts.length) : [];
+    if (!deck.length) {
+      deck = SEGMENTS[i].prompts.map((_, k) => k);
+      for (let j = deck.length - 1; j > 0; j--) { const r = Math.floor(Math.random() * (j + 1)); [deck[j], deck[r]] = [deck[r], deck[j]]; }
+    }
+    const p = deck.shift();
+    S.decks[key] = deck;
+    return p;
+  }
+
+  const activeCard = () => { const c = mod.state.current; return c && !c.resolved ? c : null; };
+
+  function spin() {
+    const S = mod.state;
+    if (mod.spinning || !S.players.length) return;
+    if (activeCard()) { toast("Primero resuelve la tarjeta actual"); return; }
+    mod.spinning = true;
+    modTimer.stop();
+    $("spin").disabled = true;
+    $("hubSub").textContent = "…";
+
+    const k = Math.floor(Math.random() * N);
+    const jitter = (0.2 + Math.random() * 0.6) * SEG;
+    const t = Math.PI * 2;
+    const from = mod.wheel.rot;
+    const targetMod = -(k * SEG + jitter);
+    let to = from - (((from % t) + t) % t) + (((targetMod % t) + t) % t);
+    to += t * (reduced ? 1 : 5 + Math.floor(Math.random() * 2));
+    if (to - from < t) to += t;
+    const dur = reduced ? 900 : 5200 + Math.random() * 800;
+
+    S.current = { ...cardFields(k, pickPrompt(k)), resolved: false, turnId: S.turnId, spin: { id: Date.now(), from, to, dur }, timer: null, comodin: null };
+    renderMod();
+    push();
+    animateSpin(mod.wheel, from, to, dur, () => {
+      mod.wheel.rot = to % (t * 20);
+      prefs.rotation = mod.wheel.rot; savePrefs();
+      mod.spinning = false;
+      $("spin").disabled = false;
+      $("hubSub").textContent = "ESPACIO";
+      S.spins++;
+      fanfare();
+      renderMod();
+      push();
+    });
+  }
+
+  function drawWildcard() {
+    const S = mod.state, c = activeCard(), tp = S.players[S.turn];
+    if (!c || mod.spinning || c.comodin != null || !tp) return false;
+    const idx = Math.floor(Math.random() * WILDCARDS.length);
+    c.comodin = idx;
+    const w = WILDCARDS[idx];
+    if (w.pts) tp.score += w.pts;
+    fanfare();
+    toast(`Comodín para ${tp.name}: ${w.name}`);
+    return true;
+  }
+
+  function advanceTurn() {
+    const S = mod.state;
+    S.turn = S.players.length ? (S.turn + 1) % S.players.length : 0;
+    S.turnId++;
+    S.turnGifts = [];
+  }
+
+  function resolve(ok) {
+    const S = mod.state, c = activeCard(); if (!c) return;
+    const ty = TYPE[c.type];
+    modTimer.stop();
+    let bumped = [];
+    if (ok) {
+      if (c.type === "w") { S.players.forEach((p) => (p.score += 1)); bumped = S.players.map((_, i) => i); toast("+1 para todo el equipo"); }
+      else if (S.players[S.turn]) { S.players[S.turn].score += ty.pts; bumped = [S.turn]; toast(`+${ty.pts} para ${S.players[S.turn].name}`); }
+      chime();
+    }
+    c.resolved = true;
+    advanceTurn();
+    renderMod(); bump(bumped); push();
+  }
+
+  function handlePlayers(docs) {
+    const S = mod.state;
+    let changed = false;
+    const bumped = [];
+    for (const d of docs) {
+      const uid = d.id, data = d.data() || {};
+      const name = String(data.name || "").trim().slice(0, 24);
+      if (!name) continue;
+      const joinedAt = Number(data.joinedAt) || 0;
+      let p = S.players.find((x) => x.uid === uid);
+      if (!p) {
+        const k = S.kicked.find((x) => x.uid === uid);
+        if (k && k.at >= joinedAt) continue;
+        if (k) S.kicked = S.kicked.filter((x) => x !== k);
+        p = S.players.find((x) => !x.uid && norm(x.name) === norm(name));
+        if (p) p.uid = uid;
+        else { if (S.players.length >= 12) continue; p = newPlayer(name, uid); S.players.push(p); }
+        changed = true;
+        toast(`${p.name} se unió al juego`);
+        tone(988, 0.12, "triangle", 0.06);
+      }
+      const tp = S.players[S.turn];
+      const isTurn = tp && tp.uid === uid;
+      if (isTurn && data.spinReq === S.turnId && !activeCard() && !mod.spinning) spin();
+      if (isTurn && data.comodinReq === S.turnId && drawWildcard()) { changed = true; bumped.push(S.turn); }
+      if (tp && !isTurn && data.giftTurn === S.turnId && !S.turnGifts.includes(p.id) && p.giftsLeft > 0) {
+        p.giftsLeft--; tp.score++; S.turnGifts.push(p.id);
+        changed = true; bumped.push(S.turn);
+        toast(`${p.name} le regaló 1 punto a ${tp.name}`);
+        chime();
+      }
+    }
+    if (changed) { renderMod(); bump(bumped); push(); }
+  }
+
+  function renderMod() {
+    const S = mod.state; if (!S) return;
+    if (S.turn >= S.players.length) S.turn = 0;
+    const cur = S.players[S.turn];
+    $("turnName").textContent = cur ? cur.name : "Agrega participantes";
+
+    const card = $("card");
+    const c = S.current;
+    if (mod.spinning) {
+      card.style.removeProperty("--seg");
+      card.innerHTML = spinningCard();
+    } else if (!c || c.resolved) {
+      card.style.removeProperty("--seg");
+      const online = cur && cur.uid;
+      card.innerHTML = `
+        <div class="card-head"><span class="label">Así se juega</span><span class="pts">${N} casillas</span></div>
+        <p class="prompt">${cur ? (online ? `${esc(cur.name)} gira desde su link.` : `${esc(cur.name)}, gira la ruleta.`) : "Agrega al menos un participante para empezar."}</p>
+        <p class="how">${online ? "Si se demora, puedes girar tú con el botón central." : "Esta persona no se ha unido con su link, así que tú operas su turno."} Las casillas frías son preguntas y las cálidas son desafíos con tiempo. Quien juega puede sacar un comodín al azar por turno.</p>
+        ${giftsLine(S)}
+        <ul class="idle-list">${SEGMENTS.map((s) => `<li><i style="background:var(${s.color})"></i>${esc(s.name)}</li>`).join("")}</ul>`;
+    } else {
+      card.style.setProperty("--seg", `var(${c.color})`);
+      const key = c.spin ? c.spin.id : 0;
+      if (modTimer.key !== key) modTimer.reset(c.secs, key);
+      const ty = TYPE[c.type];
+      card.innerHTML = cardHTML(c, {
+        ringId: "ring",
+        gifts: giftsLine(S),
+        timerBtn: `<button class="btn" id="tBtn">${modTimer.id ? "Reiniciar tiempo" : `Iniciar ${c.secs} s`}</button>`,
+        actions: `
+          <button class="btn primary" id="okBtn">${ty.ok}</button>
+          <button class="btn" id="noBtn">${ty.no}</button>
+          ${c.comodin == null ? `<button class="btn outline" id="wildBtn">Comodín al azar</button>` : ""}`,
+      });
+      modTimer.paint();
+      $("tBtn").onclick = () => {
+        modTimer.start(c.secs);
+        c.timer = { id: Date.now(), secs: c.secs };
+        $("tBtn").textContent = "Reiniciar tiempo";
+        push();
+      };
+      $("okBtn").onclick = () => resolve(true);
+      $("noBtn").onclick = () => resolve(false);
+      const wb = $("wildBtn");
+      if (wb) wb.onclick = () => { if (drawWildcard()) { renderMod(); bump([S.turn]); push(); } };
+    }
+
+    $("rows").innerHTML = S.players.map((p, i) => `
+      <li class="row ${i === S.turn ? "is-turn" : ""}" data-i="${i}">
+        <span class="pos">${i === S.turn ? "▶" : i + 1}</span>
+        <div class="who">
+          <button class="name" data-turn="${i}" title="Dar el turno a ${esc(p.name)}">${esc(p.name)}</button>
+          <span class="sub">${p.uid ? `<i></i>Se unió con su link` : `<i class="off"></i>Lo opera el moderador`} · ${p.giftsLeft} ${p.giftsLeft === 1 ? "regalo" : "regalos"}</span>
+        </div>
+        <span class="score">${p.score}</span>
+        <button class="del" data-del="${i}" aria-label="Quitar a ${esc(p.name)}">×</button>
+      </li>`).join("");
+    const joined = S.players.filter((p) => p.uid).length;
+    $("roundInfo").textContent = [mod.shared ? `${joined} con link` : "", S.spins ? `${S.spins} ${S.spins === 1 ? "giro" : "giros"}` : ""].filter(Boolean).join(" · ");
+    $("btnSound").textContent = "Sonido: " + (prefs.sound ? "sí" : "no");
+    $("btnSound").setAttribute("aria-pressed", String(prefs.sound));
+  }
+
+  function bump(indices) {
+    indices.forEach((i) => {
+      const el = document.querySelector(`#rows .row[data-i="${i}"]`);
+      if (el) { el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }
+    });
+  }
+
+  function resetGame() {
+    const S = mod.state;
+    S.players.forEach((p) => { p.score = 0; p.giftsLeft = GIFTS; });
+    S.turn = 0; S.turnId++; S.spins = 0; S.current = null; S.decks = {}; S.turnGifts = [];
+    modTimer.stop();
+  }
+
+  function showPodium() {
+    const S = mod.state;
+    if (!S.players.length) return;
+    const ranked = S.players.map((p) => ({ ...p })).sort((a, b) => b.score - a.score);
+    const top = ranked[0];
+    const tied = ranked.filter((p) => p.score === top.score);
+    $("podTitle").textContent = tied.length > 1 ? `Empate entre ${tied.map((p) => p.name).join(" y ")}` : `¡Ganó ${top.name}!`;
+    const order = [ranked[1], ranked[0], ranked[2]];
+    const cls = ["p2", "p1", "p3"], num = [2, 1, 3];
+    $("podium").innerHTML = order.map((p, i) => p ? `
+      <div class="step ${cls[i]}"><span class="who">${esc(p.name)}</span><div class="blk">${num[i]}</div><span class="pt">${p.score} pts</span></div>` : `<div class="step"></div>`).join("");
+    const rest = ranked.slice(3);
+    $("podRest").textContent = rest.length ? rest.map((p, i) => `${i + 4}. ${p.name} · ${p.score}`).join("   ") : "";
+    $("overlay").hidden = false;
+    fanfare();
+    $("podClose").focus();
+  }
+
+  // ---- Eventos moderador ----
+  $("spin").addEventListener("click", spin);
+  document.addEventListener("keydown", (e) => {
+    if (e.code !== "Space" || $("modView").hidden) return;
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "button") return;
+    if (!$("overlay").hidden || !$("editor").hidden) return;
+    e.preventDefault(); spin();
+  });
+  $("rows").addEventListener("click", (e) => {
+    const S = mod.state;
+    const d = e.target.closest("[data-del]");
+    if (d) {
+      const i = +d.dataset.del, p = S.players[i];
+      if (!p) return;
+      if (i === S.turn && activeCard()) { toast("Primero resuelve la tarjeta de esta persona"); return; }
+      if (p.uid) S.kicked.push({ uid: p.uid, at: Date.now() });
+      const wasTurn = i === S.turn;
+      S.players.splice(i, 1);
+      if (S.turn > i) S.turn--;
+      if (S.turn >= S.players.length) S.turn = 0;
+      if (wasTurn) { S.turnId++; S.turnGifts = []; }
+      renderMod(); push(); return;
+    }
+    const n = e.target.closest("[data-turn]");
+    if (n) {
+      const i = +n.dataset.turn;
+      if (i === S.turn) return;
+      if (activeCard()) { toast("Primero resuelve la tarjeta actual"); return; }
+      S.turn = i; S.turnId++; S.turnGifts = [];
+      renderMod(); push();
+    }
+  });
+  $("addForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = $("addName").value.trim();
+    if (!v) return;
+    if (mod.state.players.length >= 12) { toast("Máximo 12 participantes"); return; }
+    mod.state.players.push(newPlayer(v));
+    $("addName").value = "";
+    renderMod(); push();
+  });
+  $("btnSound").addEventListener("click", () => { prefs.sound = !prefs.sound; savePrefs(); renderMod(); });
+  $("btnLink").addEventListener("click", () => {
+    const box = $("linkBox"); box.hidden = !box.hidden;
+    $("btnLink").setAttribute("aria-expanded", String(!box.hidden));
+  });
+  $("copyLink").addEventListener("click", () => {
+    const done = () => toast("Link copiado");
+    try {
+      navigator.clipboard.writeText(PLAY_LINK).then(done, () => selectLink());
+    } catch { selectLink(); }
+  });
+  function selectLink() {
+    const r = document.createRange(); r.selectNodeContents($("playLink"));
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    toast("Copia el link seleccionado con Ctrl+C o Cmd+C");
+  }
+  const resetBtn = $("btnReset");
+  let resetArmed = null;
+  resetBtn.addEventListener("click", () => {
+    if (!resetArmed) {
+      resetBtn.textContent = "¿Seguro? Toca otra vez";
+      resetArmed = setTimeout(() => { resetArmed = null; resetBtn.textContent = "Reiniciar"; }, 3000);
+      return;
+    }
+    clearTimeout(resetArmed); resetArmed = null; resetBtn.textContent = "Reiniciar";
+    resetGame(); $("overlay").hidden = true; renderMod(); push(); toast("Juego reiniciado: puntos en cero y 4 regalos para cada uno");
+  });
+  $("btnPodium").addEventListener("click", showPodium);
+  $("podClose").addEventListener("click", () => ($("overlay").hidden = true));
+  $("podNew").addEventListener("click", () => { resetGame(); $("overlay").hidden = true; renderMod(); push(); });
+  $("overlay").addEventListener("keydown", (e) => { if (e.key === "Escape") $("overlay").hidden = true; });
+
+  // ---- Editor de preguntas ----
+  const ed = { draft: null, sel: 0, restoreArmed: null };
+  const storeLabel = () => configRef
+    ? "Los cambios quedan guardados en la ruleta y se ven en todas las pantallas."
+    : "Los cambios se guardan solo en este navegador.";
+  function setStatus(msg, err) { const s = $("edStatus"); s.textContent = msg; s.classList.toggle("err", !!err); }
+  function openEditor() {
+    ed.draft = clone(SEGMENTS);
+    const c = activeCard();
+    ed.sel = c ? c.seg : 0;
+    $("editor").hidden = false;
+    renderEditor();
+    setStatus(storeLabel());
+    $("edClose").focus();
+  }
+  function closeEditor() { $("editor").hidden = true; ed.draft = null; }
+  function renderTabs() {
+    $("edTabs").innerHTML = ed.draft.map((s, i) => `
+      <button type="button" class="ed-tab" role="tab" aria-selected="${i === ed.sel}" data-sel="${i}" style="--c: var(${s.color})">
+        <i></i><span>${esc(s.name || "Sin nombre")}</span><em>${s.prompts.filter((p) => p.trim()).length}</em>
+      </button>`).join("");
+  }
+  function renderEditor() {
+    renderTabs();
+    const s = ed.draft[ed.sel], ty = TYPE[s.type];
+    const body = $("edBody");
+    body.style.setProperty("--seg", `var(${s.color})`);
+    const noun = s.type === "d" ? "desafío" : "pregunta";
+    body.innerHTML = `
+      <div class="ed-meta">
+        <span class="badge">${ty.label}</span>
+        <label class="fld"><span>Nombre en la ruleta</span><input id="edName" maxlength="28" value="${esc(s.name)}"></label>
+        <label class="fld fld-sm"><span>Segundos</span><input id="edSecs" type="number" min="10" max="180" step="5" value="${s.secs}"></label>
+      </div>
+      <ol class="ed-list">${s.prompts.map((p, k) => `
+        <li><span class="num">${k + 1}</span>
+          <textarea id="edP-${ed.sel}-${k}" data-k="${k}" rows="2" maxlength="220" aria-label="${noun} ${k + 1}">${esc(p)}</textarea>
+          <button type="button" class="del" data-rm="${k}" aria-label="Quitar ${noun} ${k + 1}">×</button></li>`).join("")}
+      </ol>
+      <button type="button" class="btn ed-add" id="edAdd">+ Agregar ${noun}</button>`;
+  }
+  $("edTabs").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-sel]"); if (!b) return;
+    ed.sel = +b.dataset.sel; renderEditor();
+  });
+  $("edBody").addEventListener("input", (e) => {
+    const s = ed.draft[ed.sel], t = e.target;
+    if (t.id === "edName") { s.name = t.value; renderTabs(); }
+    else if (t.id === "edSecs") { s.secs = Number(t.value); }
+    else if (t.dataset.k !== undefined) { s.prompts[+t.dataset.k] = t.value; renderTabs(); }
+  });
+  $("edBody").addEventListener("click", (e) => {
+    const s = ed.draft[ed.sel];
+    const rm = e.target.closest("[data-rm]");
+    if (rm) { s.prompts.splice(+rm.dataset.rm, 1); renderEditor(); return; }
+    if (e.target.closest("#edAdd")) {
+      s.prompts.push(""); renderEditor();
+      const last = $("edBody").querySelector(`[data-k="${s.prompts.length - 1}"]`);
+      if (last) last.focus();
+    }
+  });
+  $("edRestore").addEventListener("click", () => {
+    const b = $("edRestore");
+    if (!ed.restoreArmed) {
+      b.textContent = "¿Seguro? Toca otra vez";
+      ed.restoreArmed = setTimeout(() => { ed.restoreArmed = null; b.textContent = "Restaurar originales"; }, 3000);
+      return;
+    }
+    clearTimeout(ed.restoreArmed); ed.restoreArmed = null; b.textContent = "Restaurar originales";
+    ed.draft = clone(DEFAULT_SEGMENTS); renderEditor();
+    setStatus("Se cargaron las preguntas originales. Toca Guardar cambios para aplicarlas.");
+  });
+  $("edSave").addEventListener("click", async () => {
+    const empty = ed.draft.findIndex((s) => !s.prompts.some((p) => p.trim()));
+    if (empty >= 0) {
+      ed.sel = empty; renderEditor();
+      setStatus(`La casilla «${ed.draft[empty].name || "Sin nombre"}» necesita al menos una pregunta.`, true);
+      return;
+    }
+    const cfg = toCfg(cleanCfg(toCfg(ed.draft)));
+    const btn = $("edSave"); btn.disabled = true; btn.textContent = "Guardando…";
+    let where = "en este navegador";
+    try { localStorage.setItem(LOCAL_Q, JSON.stringify(cfg)); localCfg = cfg; } catch {}
+    if (configRef) {
+      try { await configRef.set(cfg); where = "en la ruleta"; }
+      catch {
+        btn.disabled = false; btn.textContent = "Guardar cambios";
+        applyConfig(cfg);
+        setStatus("No se pudo guardar en la ruleta, así que los cambios quedaron solo en este navegador. Revisa tu conexión y vuelve a guardar.", true);
+        return;
+      }
+    }
+    btn.disabled = false; btn.textContent = "Guardar cambios";
+    applyConfig(cfg);
+    closeEditor();
+    toast(`Preguntas guardadas ${where}`);
+  });
+  $("btnEdit").addEventListener("click", openEditor);
+  $("edClose").addEventListener("click", closeEditor);
+  $("editor").addEventListener("keydown", (e) => { if (e.key === "Escape") closeEditor(); });
+
+  // =====================================================================
+  // ================= VISTA JUGADOR =================
+  // =====================================================================
+  const play = {
+    started: false, wheel: null, uid: null, meRef: null, myDoc: null, game: null,
+    first: true, lastSpinId: null, lastTimerId: null, animating: false, error: null,
+    readOnly: false, loaded: false, lastTurnId: null, chain: Promise.resolve(), sending: false,
+  };
+  const playTimer = makeTimer("pring");
+
+  async function initPlay() {
+    if (play.started) { renderPlay(); return; }
+    play.started = true;
+    play.wheel = makeWheel($("pwheel"));
+    renderPlay();
+    const [db, user] = await Promise.all([dbP, userP]);
+    if (!db || !user) {
+      play.error = "No pudimos conectarte al juego. Revisa que hayas iniciado sesión en Claude y que te hayan compartido la ruleta.";
+      renderPlay(); return;
+    }
+    let uid = null;
+    try { uid = await user.id(); } catch {}
+    if (!uid) {
+      play.error = "No pudimos identificar tu cuenta. Inicia sesión en Claude y vuelve a abrir el link.";
+      renderPlay(); return;
+    }
+    play.uid = uid;
+    play.meRef = db.doc("players/" + uid);
+    try { const s = await play.meRef.get(); if (s.exists) play.myDoc = { ...s.data() }; } catch {}
+    try { const w = await user.can("data.write"); play.readOnly = w === false; } catch {}
+    const loadTimer = setTimeout(() => {
+      if (!play.loaded) { play.error = "Todavía no encontramos el juego. Pide a quien modera que abra la ruleta y espera unos segundos."; renderPlay(); }
+    }, 10000);
+    db.doc("game/estado").onSnapshot(
+      (snap) => {
+        if (!snap.metadata.fromCache) { clearTimeout(loadTimer); play.loaded = true; if (play.error && play.error.startsWith("Todavía")) play.error = null; }
+        onGame(snap.exists ? normalizeGame(snap.data()) : null);
+      },
+      () => { clearTimeout(loadTimer); play.error = "Se perdió la conexión con el juego. Recarga la página."; renderPlay(); }
+    );
+  }
+
+  function onGame(g) {
+    const prevTurnId = play.game ? play.game.turnId : null;
+    play.game = g;
+    const c = g && g.current;
+    if (c && c.spin && c.spin.id !== play.lastSpinId) {
+      play.lastSpinId = c.spin.id;
+      if (play.first || c.resolved) { play.wheel.rot = c.spin.to; play.wheel.draw(); }
+      else {
+        play.animating = true;
+        playTimer.stop();
+        animateSpin(play.wheel, c.spin.from, c.spin.to, c.spin.dur, () => {
+          play.animating = false; fanfare(); renderPlay();
+        });
+      }
+    }
+    if (c && c.timer && c.timer.id !== play.lastTimerId) {
+      play.lastTimerId = c.timer.id;
+      if (!play.first && !c.resolved) playTimer.start(c.timer.secs);
+    }
+    if (!c || c.resolved) playTimer.stop();
+    const me = myPlayer();
+    if (!play.first && g && prevTurnId !== g.turnId && me && g.players[g.turn] === me) { tone(880, 0.15, "triangle", 0.08); setTimeout(() => tone(1175, 0.2, "triangle", 0.08), 140); }
+    play.first = false;
+    renderPlay();
+  }
+
+  const myPlayer = () => (play.game && play.uid ? play.game.players.find((p) => p.uid === play.uid) : null);
+
+  function writeMe(patch) {
+    play.myDoc = { ...(play.myDoc || {}), ...patch };
+    const body = clone(play.myDoc);
+    play.sending = true; renderPlay();
+    play.chain = play.chain.then(async () => {
+      try { await play.meRef.set(body); }
+      catch (e) {
+        toast(play.readOnly ? "Tu acceso es solo de lectura. Pide que te compartan la ruleta como Colaborador." : "No se pudo enviar. Revisa tu conexión e inténtalo otra vez.");
+        if (patch.spinReq) play.myDoc.spinReq = null;
+        if (patch.comodinReq) play.myDoc.comodinReq = null;
+        if (patch.giftTurn) play.myDoc.giftTurn = null;
+      }
+      play.sending = false; renderPlay();
+    });
+  }
+
+  function renderPlay() {
+    const joinBox = $("pJoin"), gameBox = $("pGame"), chip = $("meChip");
+    $("pSound").textContent = "Sonido: " + (prefs.sound ? "sí" : "no");
+    $("pSound").setAttribute("aria-pressed", String(prefs.sound));
+    const g = play.game, me = myPlayer();
+
+    if (play.error || !play.uid || !play.myDoc || !me) {
+      gameBox.hidden = true; chip.hidden = true; joinBox.hidden = false;
+      const form = $("pJoinForm"), note = $("pJoinNote");
+      note.classList.remove("err");
+      if (play.error) {
+        $("pJoinTitle").textContent = "No pudimos conectarte";
+        $("pJoinText").textContent = play.error;
+        form.hidden = true; note.textContent = "";
+      } else if (!play.uid) {
+        $("pJoinTitle").textContent = "Conectando…";
+        $("pJoinText").textContent = "Estamos buscando el juego.";
+        form.hidden = true; note.textContent = "";
+      } else if (!play.myDoc || !play.myDoc.name) {
+        $("pJoinTitle").textContent = "¿Cómo te llamas?";
+        $("pJoinText").textContent = "Escribe tu nombre tal como quieres que aparezca en el marcador.";
+        form.hidden = false;
+        note.textContent = play.readOnly ? "Tu acceso parece ser solo de lectura. Si no logras unirte, pide que te compartan la ruleta como Colaborador." : "";
+        if (play.readOnly) note.classList.add("err");
+      } else {
+        $("pJoinTitle").textContent = `Hola, ${play.myDoc.name}`;
+        $("pJoinText").textContent = "Ya enviamos tu nombre. En cuanto la pantalla del moderador te sume, aparecerá el juego aquí.";
+        form.hidden = true;
+        note.textContent = "Si demora, pide a quien modera que tenga abierta la ruleta.";
+      }
+      return;
+    }
+
+    joinBox.hidden = true; gameBox.hidden = false; chip.hidden = false;
+    play.wheel.resize();
+    chip.innerHTML = `<span>${esc(me.name)}</span><span><b>${me.score}</b> pts</span><span><b>${me.giftsLeft}</b> de ${GIFTS} regalos</span>`;
+
+    const tp = g.players[g.turn];
+    const myTurn = tp === me;
+    $("pTurnLabel").textContent = myTurn ? "Es" : "Turno de";
+    $("pTurnName").textContent = myTurn ? "¡tu turno!" : (tp ? tp.name : "—");
+
+    const c = g.current;
+    const active = c && !c.resolved;
+    const card = $("pCard");
+    if (active && play.animating) {
+      card.style.removeProperty("--seg"); card.innerHTML = spinningCard();
+    } else if (active) {
+      card.style.setProperty("--seg", `var(${c.color})`);
+      card.innerHTML = cardHTML(c, { ringId: "pring", gifts: giftsLine(g) });
+      if (!playTimer.id) { playTimer.total = c.secs; playTimer.left = c.secs; }
+      playTimer.paint();
+    } else {
+      card.style.removeProperty("--seg");
+      card.innerHTML = `
+        <div class="card-head"><span class="label">${myTurn ? "Tu turno" : "En espera"}</span></div>
+        <p class="prompt">${myTurn ? "Gira la ruleta para ver tu pregunta o desafío." : `Esperando que ${esc(tp ? tp.name : "")} gire la ruleta.`}</p>
+        <p class="how">Las preguntas suman 1 punto y los desafíos 2. En tu turno puedes sacar un comodín al azar.</p>
+        ${giftsLine(g)}`;
+    }
+
+    // Acciones
+    let html = "";
+    if (myTurn) {
+      if (!active) {
+        const pending = play.myDoc.spinReq === g.turnId;
+        html += `<button class="btn gold big" id="pSpin" ${pending || play.sending ? "disabled" : ""}>${pending ? "Girando…" : "Girar la ruleta"}</button>`;
+        if (pending) html += `<p class="note">Si la ruleta no gira en unos segundos, avisa a quien modera.</p>`;
+      } else if (!play.animating) {
+        if (c.comodin == null) {
+          const pending = play.myDoc.comodinReq === g.turnId;
+          html += `<button class="btn outline big" id="pWild" ${pending || play.sending ? "disabled" : ""}>${pending ? "Sacando comodín…" : "Sacar comodín al azar"}</button>
+            <p class="note">Uno por turno. Puede darte puntos extra o ponerte una condición para responder.</p>`;
+        } else {
+          html += `<p class="note">Ya usaste tu comodín en este turno. Responde y quien modera marcará tu resultado.</p>`;
+        }
+      }
+    } else if (tp) {
+      const gave = g.turnGifts.includes(me.id) || play.myDoc.giftTurn === g.turnId;
+      const pips = Array.from({ length: GIFTS }, (_, i) => `<i class="${i < me.giftsLeft ? "full" : ""}"></i>`).join("");
+      html += `<section class="gift">
+        <span class="label">Puntos de regalo</span>
+        <h3>Premia a ${esc(tp.name)} por su desempeño</h3>
+        <div class="pips" aria-label="Te quedan ${me.giftsLeft} de ${GIFTS}">${pips}</div>
+        ${me.giftsLeft <= 0
+          ? `<p class="note">Ya regalaste tus ${GIFTS} puntos.</p>`
+          : gave
+            ? `<p class="note">Ya le regalaste un punto a ${esc(tp.name)} en este turno.</p>`
+            : `<button class="btn gold" id="pGift" ${play.sending ? "disabled" : ""}>Regalar 1 punto a ${esc(tp.name)}</button>
+               <p class="note">Puedes regalar máximo 1 punto por turno.</p>`}
+      </section>`;
+    }
+    $("pActions").innerHTML = html;
+    const sb = $("pSpin"); if (sb) sb.onclick = () => { if (audio === undefined) tone(1, 0.001); writeMe({ spinReq: g.turnId }); };
+    const wb = $("pWild"); if (wb) wb.onclick = () => writeMe({ comodinReq: g.turnId });
+    const gb = $("pGift"); if (gb) gb.onclick = () => writeMe({ giftTurn: g.turnId });
+
+    $("pRows").innerHTML = g.players.map((p, i) => `
+      <li class="row ${i === g.turn ? "is-turn" : ""} ${p === me ? "me" : ""}">
+        <span class="pos">${i === g.turn ? "▶" : i + 1}</span>
+        <div class="who"><span class="name">${esc(p.name)}</span></div>
+        <span class="score">${p.score}</span>
+      </li>`).join("");
+  }
+
+  $("pJoinForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("pName").value.trim().slice(0, 24);
+    if (!name || !play.meRef) return;
+    tone(1, 0.001);
+    writeMe({ name, joinedAt: Date.now(), spinReq: null, comodinReq: null, giftTurn: null });
+  });
+  $("pSound").addEventListener("click", () => { prefs.sound = !prefs.sound; savePrefs(); renderPlay(); });
+
+  // ================= RUTAS =================
+  function route() {
+    const isPlay = location.hash === "#jugar";
+    $("modView").hidden = isPlay;
+    $("playView").hidden = !isPlay;
+    if (isPlay) initPlay(); else initMod();
+  }
+  window.addEventListener("hashchange", route);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { mod.wheel && mod.wheel.draw(); play.wheel && play.wheel.draw(); });
+  route();
+})();
+</script>
+
+</body>
+</html>
