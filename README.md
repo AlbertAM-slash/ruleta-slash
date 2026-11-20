@@ -12,7 +12,7 @@ Ruleta rompehielos para las reuniones online del equipo de Slash. Tiene categor�
 El modo multijugador (unirse con el link, girar desde el propio dispositivo y regalar puntos) usa el almacenamiento compartido de los Artifacts de Claude. Por eso:
 
 - **En Claude** funciona todo: https://claude.ai/artifact/ByGb4w8QU43T9dy2DeXjSC (moderador) y https://claude.ai/artifact/ByGb4w8QU43T9dy2DeXjSC#jugar (jugadores). Cada jugador necesita acceso como Colaborador.
-- **En GitHub Pages** los jugadores se conectan directo al navegador del moderador con [PeerJS](https://peerjs.com/), usando un código de sala de 4 caracteres. No necesitan cuenta.
+- **En GitHub Pages** los jugadores entran con un código de sala de 4 caracteres. La sala usa servidores públicos de mensajería MQTT (EMQX, HiveMQ y Mosquitto como respaldo). No se necesita cuenta.
 
 ## Cómo jugar en GitHub Pages
 
@@ -22,4 +22,4 @@ El modo multijugador (unirse con el link, girar desde el propio dispositivo y re
 4. La pestaña del moderador debe quedar abierta todo el juego: es la que conecta a todos. Si se recarga, los jugadores se reconectan solos.
 5. Si alguien no puede entrar, quien modera opera su turno desde su pantalla.
 
-La conexión directa puede fallar en redes muy restringidas (algunas VPN o redes corporativas). En ese caso, esa persona juega a través del moderador.
+Los servidores de mensajería son públicos: no compartas datos sensibles en el juego. Si una red bloquea la conexión (algunas VPN o redes corporativas), esa persona juega a través del moderador.

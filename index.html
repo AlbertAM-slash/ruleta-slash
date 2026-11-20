@@ -471,24 +471,41 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 (() => {
   const ARTIFACT_URL = "https://claude.ai/artifact/ByGb4w8QU43T9dy2DeXjSC";
   let PLAY_LINK = ARTIFACT_URL + "#jugar";
-  // Dentro de Claude se usa el almacenamiento del Artifact; fuera (GitHub Pages) se usa una sala directa con PeerJS.
+  // Dentro de Claude se usa el almacenamiento del Artifact; fuera (GitHub Pages) se usa una sala por código
+  // sobre un servidor público de mensajería MQTT (con servidores de respaldo).
   const IN_CLAUDE = !!(window.claude && window.claude.use);
-  const PEER_PREFIX = "ruleta-slash-sala-";
+  const ROOM_TOPIC = (code) => "ruleta-slash/v1/" + code;
+  const BROKERS = ["wss://broker.emqx.io:8084/mqtt", "wss://broker.hivemq.com:8884/mqtt", "wss://test.mosquitto.org:8081/mqtt"];
   const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   const makeCode = () => Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join("");
-  let peerLib = null;
-  function loadPeer() {
-    if (window.Peer) return Promise.resolve(window.Peer);
-    if (peerLib) return peerLib;
-    peerLib = new Promise((res, rej) => {
+  let mqttLib = null;
+  function loadMqtt() {
+    if (window.mqtt) return Promise.resolve(window.mqtt);
+    if (mqttLib) return mqttLib;
+    mqttLib = new Promise((res, rej) => {
       const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js";
-      s.onload = () => (window.Peer ? res(window.Peer) : rej(new Error("peer")));
-      s.onerror = () => { peerLib = null; rej(new Error("peer")); };
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.10.1/mqtt.min.js";
+      s.onload = () => (window.mqtt ? res(window.mqtt) : rej(new Error("mqtt")));
+      s.onerror = () => { mqttLib = null; rej(new Error("mqtt")); };
       document.head.appendChild(s);
     });
-    return peerLib;
+    return mqttLib;
   }
+  // Prueba los servidores en orden y deja activa la reconexión automática en el que responda.
+  async function connectBroker() {
+    const lib = await loadMqtt();
+    for (const url of BROKERS) {
+      const client = await new Promise((res) => {
+        const c = lib.connect(url, { connectTimeout: 6000, reconnectPeriod: 0, clean: true });
+        const t = setTimeout(() => { c.end(true); res(null); }, 7000);
+        c.once("connect", () => { clearTimeout(t); res(c); });
+        c.once("error", () => { clearTimeout(t); c.end(true); res(null); });
+      });
+      if (client) { client.options.reconnectPeriod = 2000; return client; }
+    }
+    throw new Error("sin servidor");
+  }
+  const parseMsg = (payload) => { try { const s = payload.toString(); return s ? JSON.parse(s) : null; } catch { return null; } };
   const $ = (id) => document.getElementById(id);
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -921,10 +938,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 
   // ---- Sala directa (fuera de Claude) ----
   const host = {
-    active: false, peer: null, code: null, conns: new Map(), docs: {},
+    active: false, client: null, code: null, docs: {},
     broadcast() {
-      const msg = { t: "state", game: clone(mod.state) };
-      for (const c of host.conns.values()) { try { if (c.open) c.send(msg); } catch {} }
+      if (!host.client || !host.code) return;
+      try { host.client.publish(ROOM_TOPIC(host.code) + "/state", JSON.stringify(mod.state), { retain: true, qos: 1 }); } catch {}
     },
   };
   function playBase() { return location.origin + location.pathname.replace(/[^/]*$/, ""); }
@@ -937,41 +954,27 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   }
   async function startHost() {
     $("modSub").textContent = "Abriendo la sala para jugadores…";
-    let Peer;
-    try { Peer = await loadPeer(); }
-    catch { $("modSub").textContent = "No se pudo cargar la conexión para jugadores. Revisa tu internet y recarga."; return; }
-    let tries = 0;
-    const open = (code) => {
-      const peer = new Peer(PEER_PREFIX + code);
-      peer.on("open", () => {
-        host.active = true; host.peer = peer; host.code = code;
-        prefs.room = code; savePrefs();
-        updateLink(); host.broadcast(); renderMod();
-      });
-      peer.on("error", (e) => {
-        if (e && e.type === "unavailable-id" && !host.active) {
-          peer.destroy();
-          tries++;
-          // La sala anterior puede tardar unos segundos en liberarse al recargar
-          if (tries <= 3) setTimeout(() => open(code), 2500); else { tries = 0; open(makeCode()); }
-        } else if (!host.active) {
-          $("modSub").textContent = "No se pudo abrir la sala para jugadores. Revisa tu internet y recarga la página.";
-        }
-      });
-      peer.on("disconnected", () => { try { peer.reconnect(); } catch {} });
-      peer.on("connection", (conn) => {
-        conn.on("open", () => { host.conns.set(conn.peer, conn); try { conn.send({ t: "state", game: clone(mod.state) }); } catch {} });
-        conn.on("data", (m) => onHostData(conn, m));
-        conn.on("close", () => host.conns.delete(conn.peer));
-        conn.on("error", () => host.conns.delete(conn.peer));
-      });
-    };
-    open(prefs.room && /^[A-Z0-9]{4}$/.test(prefs.room) ? prefs.room : makeCode());
+    let client;
+    try { client = await connectBroker(); }
+    catch { $("modSub").textContent = "No se pudo abrir la sala para jugadores. Revisa tu internet y recarga la página."; return; }
+    const code = prefs.room && /^[A-Z0-9]{4}$/.test(prefs.room) ? prefs.room : makeCode();
+    prefs.room = code; savePrefs();
+    host.client = client; host.code = code; host.active = true;
+    const docPrefix = ROOM_TOPIC(code) + "/doc/";
+    client.subscribe(docPrefix + "+", { qos: 1 });
+    client.on("message", (topic, payload) => {
+      if (!topic.startsWith(docPrefix)) return;
+      const d = parseMsg(payload);
+      if (d && typeof d === "object") onHostDoc(topic.slice(docPrefix.length), d);
+    });
+    client.on("connect", () => host.broadcast());
+    client.on("offline", () => { $("modSub").textContent = "Sin conexión con los jugadores. Reintentando…"; });
+    client.on("reconnect", () => {});
+    client.on("connect", () => updateLink());
+    updateLink(); host.broadcast(); renderMod();
   }
-  function onHostData(conn, m) {
-    if (!m || typeof m !== "object" || m.t !== "doc" || !m.cid || !m.doc || typeof m.doc !== "object") return;
-    const cid = String(m.cid).slice(0, 60);
-    const d = m.doc;
+  function onHostDoc(cidRaw, d) {
+    const cid = String(cidRaw).slice(0, 60);
     host.docs[cid] = {
       name: String(d.name || "").slice(0, 24),
       joinedAt: Number(d.joinedAt) || 0,
@@ -980,7 +983,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
       giftTurn: Number(d.giftTurn) || null,
     };
     handlePlayers(Object.entries(host.docs).map(([id, data]) => ({ id, data: () => data })));
-    try { conn.send({ t: "state", game: clone(mod.state) }); } catch {}
   }
 
   function pickPrompt(i) {
@@ -1404,43 +1406,52 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
     try { localStorage.setItem(LOCAL_ME, JSON.stringify({ cid: play.uid, code: play.code, doc: play.myDoc })); } catch {}
   }
   function sendDoc() {
-    if (play.conn && play.conn.open) { try { play.conn.send({ t: "doc", cid: play.uid, doc: play.myDoc }); return true; } catch {} }
-    return false;
+    const c = play.client;
+    if (!c || !c.connected || !play.code || !play.myDoc) return false;
+    try { c.publish(ROOM_TOPIC(play.code) + "/doc/" + play.uid, JSON.stringify(play.myDoc), { retain: true, qos: 1 }); return true; } catch { return false; }
   }
   async function connectPeer() {
     if (play.connecting) return;
     play.connecting = true;
     play.joinError = "";
-    play.peerStatus = play.peerStatus === "lost" ? "lost" : "connecting";
+    play.peerStatus = "connecting";
+    play.everOpen = false;
+    play.game = null; play.first = true; play.lastSpinId = null; play.lastTimerId = null;
+    if (play.client) { try { play.client.end(true); } catch {} play.client = null; }
     renderPlay();
-    let Peer;
-    try { Peer = await loadPeer(); }
-    catch { play.connecting = false; play.peerStatus = "idle"; play.joinError = "No se pudo cargar la conexión. Revisa tu internet e inténtalo otra vez."; renderPlay(); return; }
-    const fail = (msg, retry) => {
-      play.connecting = false;
+    let client;
+    try { client = await connectBroker(); }
+    catch {
+      play.connecting = false; play.peerStatus = "idle";
+      play.joinError = "No se pudo conectar. Revisa tu internet e inténtalo otra vez.";
+      renderPlay(); return;
+    }
+    play.client = client; play.connecting = false;
+    const code = play.code;
+    const stateTopic = ROOM_TOPIC(code) + "/state";
+    client.subscribe(stateTopic, { qos: 1 });
+    clearTimeout(play.connTimer);
+    play.connTimer = setTimeout(() => {
+      if (!play.everOpen && play.client === client) {
+        client.end(true); play.client = null;
+        play.peerStatus = "idle";
+        play.joinError = `No encontramos la sala ${code}. Revisa el código y que quien modera tenga la ruleta abierta.`;
+        renderPlay();
+      }
+    }, 9000);
+    client.on("message", (topic, payload) => {
+      if (topic !== stateTopic || play.client !== client) return;
+      const g = normalizeGame(parseMsg(payload));
+      if (!g) return;
+      const firstOpen = !play.everOpen;
+      play.everOpen = true; play.loaded = true; play.peerStatus = "open";
       clearTimeout(play.connTimer);
-      if (retry) { play.peerStatus = "lost"; renderPlay(); setTimeout(connectPeer, 3000); }
-      else { play.peerStatus = "idle"; play.joinError = msg; renderPlay(); }
-    };
-    const go = () => {
-      const conn = play.peer.connect(PEER_PREFIX + play.code, { reliable: true });
-      play.connTimer = setTimeout(() => { if (!conn.open) { try { conn.close(); } catch {} fail(`No encontramos la sala ${play.code}. Revisa el código y que quien modera tenga la ruleta abierta.`, play.everOpen); } }, 12000);
-      conn.on("open", () => {
-        clearTimeout(play.connTimer);
-        play.conn = conn; play.connecting = false; play.peerStatus = "open"; play.everOpen = true;
-        sendDoc(); renderPlay();
-      });
-      conn.on("data", (m) => { if (m && m.t === "state") { play.loaded = true; onGame(normalizeGame(m.game)); } });
-      conn.on("close", () => { if (play.conn === conn) { play.conn = null; fail("", true); } });
-    };
-    if (play.peer && !play.peer.destroyed && play.peer.open) { go(); return; }
-    if (play.peer) { try { play.peer.destroy(); } catch {} }
-    play.peer = new Peer();
-    play.peer.on("open", go);
-    play.peer.on("error", (e) => {
-      if (e && e.type === "peer-unavailable") fail(`No encontramos la sala ${play.code}. Revisa el código y que quien modera tenga la ruleta abierta.`, play.everOpen);
-      else fail("Se cortó la conexión.", true);
+      if (firstOpen) sendDoc();
+      onGame(g);
     });
+    client.on("offline", () => { if (play.client === client && play.everOpen) { play.peerStatus = "lost"; renderPlay(); } });
+    client.on("connect", () => { if (play.client === client && play.everOpen) { play.peerStatus = "open"; sendDoc(); renderPlay(); } });
+    renderPlay();
   }
 
   async function initPlay() {
