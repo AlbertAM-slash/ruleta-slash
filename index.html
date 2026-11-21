@@ -306,10 +306,66 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   box-shadow: 0 10px 30px rgba(0,0,0,.4); max-width: calc(100% - 32px); text-align: center;
 }
 
+/* Portada */
+.cover {
+  position: fixed; inset: 0; z-index: 70; overflow: hidden;
+  display: grid; place-items: center;
+  background: radial-gradient(ellipse 70% 60% at 50% 40%, #2c2575 0%, #1a1745 45%, var(--stage) 80%);
+  padding: max(24px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.cover-disc {
+  position: absolute; left: 50%; top: 50%; width: min(130vmin, 1200px); aspect-ratio: 1; border-radius: 50%;
+  translate: -50% -50%; opacity: .16;
+  background: conic-gradient(var(--q1) 0 36deg, var(--d1) 0 72deg, var(--q2) 0 108deg, var(--d2) 0 144deg, var(--q3) 0 180deg, var(--d3) 0 216deg, var(--q4) 0 252deg, var(--d4) 0 288deg, var(--q5) 0 324deg, var(--wild) 0 360deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 22%, #000 23% 70%, transparent 71%);
+          mask: radial-gradient(circle, transparent 0 22%, #000 23% 70%, transparent 71%);
+  animation: coverspin 80s linear infinite;
+}
+@keyframes coverspin { to { rotate: 360deg; } }
+.cover-inner { position: relative; display: flex; flex-direction: column; align-items: center; gap: clamp(16px, 3vh, 28px); text-align: center; max-width: 100%; }
+.bulbs { display: flex; gap: clamp(10px, 2vw, 18px); }
+.bulbs i {
+  width: clamp(8px, 1.2vw, 12px); aspect-ratio: 1; border-radius: 50%; background: var(--gold);
+  box-shadow: 0 0 10px var(--gold); animation: bulb 1.2s steps(1) infinite;
+}
+.bulbs i:nth-child(even) { animation-delay: .6s; }
+@keyframes bulb { 50% { background: #5a4f9c; box-shadow: none; } }
+.cover-title {
+  margin: 0; font-family: var(--f-display); font-weight: 800; line-height: .86; letter-spacing: -0.035em;
+  font-size: clamp(64px, 15vw, 190px); display: flex; flex-direction: column; align-items: center;
+}
+.cover-title span:last-child { color: var(--gold); text-shadow: 0 0 40px color-mix(in srgb, var(--gold) 45%, transparent); }
+.cover-tag {
+  margin: 0; display: flex; align-items: center; gap: 14px;
+  font-family: var(--f-body); font-weight: 600; font-size: clamp(16px, 2.4vw, 26px); color: var(--text); letter-spacing: .02em;
+}
+.cover-tag::before, .cover-tag::after { content: ""; width: clamp(24px, 6vw, 70px); height: 2px; background: var(--gold); flex: none; }
+.cover-btn {
+  margin-top: 8px; border: 0; border-radius: 999px; background: var(--gold); color: var(--ink);
+  font-family: var(--f-display); font-weight: 800; font-size: clamp(20px, 2.6vw, 28px); letter-spacing: .06em;
+  padding: 16px 48px; box-shadow: 0 0 0 6px color-mix(in srgb, var(--gold) 22%, transparent), 0 14px 40px rgba(0,0,0,.45);
+  animation: glow 2.4s ease-in-out infinite; transition: transform .15s ease;
+}
+.cover-btn:hover { transform: scale(1.05); }
+@keyframes glow { 50% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--gold) 10%, transparent), 0 14px 40px rgba(0,0,0,.45); } }
+.cover-foot { font-size: 13px; color: var(--muted); margin: 0; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 </style>
+
+<!-- ============ PORTADA ============ -->
+<section class="cover" id="cover" aria-labelledby="coverTitle">
+  <div class="cover-disc" aria-hidden="true"></div>
+  <div class="cover-inner">
+    <div class="bulbs" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <h1 class="cover-title" id="coverTitle"><span>RULETA</span><span>SLASH</span></h1>
+    <p class="cover-tag">El Estelar más querido de América</p>
+    <button class="cover-btn" id="coverBtn">Ingresar</button>
+    <p class="cover-foot">Preguntas, desafíos y comodines para el equipo</p>
+  </div>
+</section>
 
 <!-- ============ VISTA MODERADOR ============ -->
 <div class="wrap" id="modView">
@@ -1204,7 +1260,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
     if (e.code !== "Space" || $("modView").hidden) return;
     const tag = (e.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "button") return;
-    if (!$("overlay").hidden || !$("editor").hidden) return;
+    if (!$("overlay").hidden || !$("editor").hidden || !$("cover").hidden) return;
     e.preventDefault(); spin();
   });
   $("rows").addEventListener("click", (e) => {
@@ -1689,8 +1745,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   $("pSound").addEventListener("click", () => { prefs.sound = !prefs.sound; savePrefs(); renderPlay(); });
 
   // ================= RUTAS =================
+  let coverDone = false;
+  $("coverBtn").addEventListener("click", () => {
+    coverDone = true;
+    $("cover").hidden = true;
+    fanfare();
+    if (mod.wheel) mod.wheel.resize();
+  });
   function route() {
     const isPlay = location.hash === "#jugar";
+    $("cover").hidden = isPlay || coverDone;
+    if (!$("cover").hidden) setTimeout(() => $("coverBtn").focus(), 0);
     $("modView").hidden = isPlay;
     $("playView").hidden = !isPlay;
     if (isPlay) initPlay(); else initMod();
