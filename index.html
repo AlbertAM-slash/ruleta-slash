@@ -308,7 +308,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 
 /* Portada */
 .cover {
-  position: fixed; inset: 0; z-index: 70; overflow: hidden;
+  position: fixed; inset: 0; z-index: 70; overflow: hidden; overflow: clip;
   display: grid; place-items: center;
   background: radial-gradient(ellipse 70% 60% at 50% 40%, #2c2575 0%, #1a1745 45%, var(--stage) 80%);
   padding: max(24px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
@@ -1755,7 +1755,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   function route() {
     const isPlay = location.hash === "#jugar";
     $("cover").hidden = isPlay || coverDone;
-    if (!$("cover").hidden) setTimeout(() => $("coverBtn").focus(), 0);
+    if (!$("cover").hidden) setTimeout(() => { $("coverBtn").focus({ preventScroll: true }); $("cover").scrollTop = 0; }, 0);
     $("modView").hidden = isPlay;
     $("playView").hidden = !isPlay;
     if (isPlay) initPlay(); else initMod();
